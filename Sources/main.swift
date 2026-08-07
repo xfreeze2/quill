@@ -21,6 +21,7 @@ enum Defaults {
     static let didShowSetup = "didShowSetup"
     static let stopPhrase = "stopPhrase"
     static let pauseSeconds = "pauseSeconds"
+    static let polish = "polish"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -32,6 +33,7 @@ enum Defaults {
             singleTap: true,
             stopPhrase: true,
             pauseSeconds: 3.0,
+            polish: false,
         ])
     }
 
@@ -293,6 +295,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                   action: #selector(toggleClickToInsert))
         addToggle(to: menu, title: "Insert at end of field", key: Defaults.insertAtEnd,
                   action: #selector(toggleInsertAtEnd))
+        addToggle(to: menu, title: "Clean up grammar", key: Defaults.polish,
+                  action: #selector(togglePolish))
         addToggle(to: menu, title: "Stop when I say \u{201C}that\u{2019}s it\u{201D} or \u{201C}that\u{2019}s all\u{201D}", key: Defaults.stopPhrase,
                   action: #selector(toggleStopPhrase))
 
@@ -396,6 +400,16 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     @objc private func toggleInsertAtEnd()   { Defaults.flip(Defaults.insertAtEnd) }
     @objc private func toggleStopPhrase()    { Defaults.flip(Defaults.stopPhrase) }
+
+    @objc private func togglePolish() {
+        Defaults.flip(Defaults.polish)
+        let on = Defaults.bool(Defaults.polish)
+        Log.write("grammar cleanup \(on ? "on" : "off")")
+        hud.apply(.notice(on
+            ? "Grammar cleanup on — adds about a second, and never changes your wording"
+            : "Grammar cleanup off"))
+        hud.collapse(after: 3)
+    }
 
     @objc private func setPause(_ sender: NSMenuItem) {
         guard let seconds = sender.representedObject as? Double else { return }
@@ -556,6 +570,11 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         }
         client.onComplete = { [weak self] text in self?.finishSession(with: text) }
         client.onFailure = { [weak self] failure in self?.abortSession(message: failure.message) }
+
+        // Open the connection while they are still talking: a cold request
+        // measured ~1.9s against ~0.8s warm, which is the whole difference
+        // between this feeling instant and feeling like a wait.
+        if Defaults.bool(Defaults.polish) { Polisher.warm(token: creds.token) }
 
         client.connect(token: creds.token,
                        language: UserDefaults.standard.string(forKey: Defaults.language) ?? "en")
@@ -804,6 +823,23 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         remember(trimmed)
         hud.update(text: trimmed)
 
+        guard Defaults.bool(Defaults.polish), let creds = Auth.load() else {
+            completeSession(with: trimmed)
+            return
+        }
+
+        // Show the raw words while the cleanup runs, so nothing appears to stall.
+        hud.apply(.thinking)
+        hud.update(text: trimmed)
+        Polisher.polish(trimmed, token: creds.token) { [weak self] result in
+            self?.completeSession(with: result)
+        }
+    }
+
+    /// Everything after the text is final, whichever way it got there. The
+    /// self-test lives on this path too — routing it around the real one is how
+    /// three separate features ended up appearing to pass while untested.
+    private func completeSession(with trimmed: String) {
         if selfTestPath != nil {
             FileHandle.standardError.write(Data("SELFTEST RESULT: \(trimmed)\n".utf8))
             // Lets a test wait for background work (e.g. launching Grok) to finish.
@@ -843,6 +879,11 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             return
         }
 
+        deliver(trimmed)
+    }
+
+    /// Put the finished text into the focused app.
+    private func deliver(_ trimmed: String) {
         // After a click we wait a beat: the click still has to land, focus has to
         // settle, and the app has to place its caret before we write into it.
         let settle: TimeInterval = (stopReason == .click) ? 0.22 : 0.16

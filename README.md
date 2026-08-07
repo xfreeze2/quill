@@ -92,6 +92,7 @@ Right-click the pill (or the menu-bar icon):
 - **Trigger** — `Control`, right `⌘`, right `⌥`, `🌐`, or `F5`; single tap or double tap
 - **Click anywhere to insert** — the click-to-choose-destination gesture
 - **Insert at end of field** — append after existing text rather than at the cursor
+- **Clean up grammar** — off by default; see below
 - **Stop when I say "that's it" or "that's all"** — finish a dictation by voice alone
 - **Finish when I stop talking** — off, or after 1.5 / 3 / 5 seconds of silence
 - **Language** — 26 languages including Chinese, or auto-detect (which works well — the model
@@ -114,6 +115,27 @@ gesture and `⌃`-scroll is screen zoom, and neither moves a key counter.
 
 `F5` is offered but rarely useful: on most Macs the function row is in media mode, where F5 *is*
 the system Dictation key and never arrives as a keypress at all.
+
+## Grammar cleanup (optional)
+
+Switch on **Clean up grammar** and each dictation is tidied by Grok before it's inserted —
+capitalisation, punctuation, apostrophes, the small things speech-to-text leaves behind.
+
+```
+you said:   so i was thinking maybe we could ship this on friday
+you get:    So I was thinking maybe we could ship this on Friday.
+```
+
+It uses the fastest non-reasoning model, so there's no thinking time — around **0.9 seconds**,
+and the connection is opened while you're still speaking so the request is already warm. Off by
+default, because it costs that second and because it changes your words.
+
+**It will not rewrite you.** The instruction is to correct and nothing else, but instructions
+alone aren't enough — a dictation is often itself a question or a command, and a model asked to
+tidy "what is the capital of France" might answer it instead. So the result is checked before
+it's used: it has to be a similar length and keep at least 70% of your original words, or your
+raw text is inserted untouched. Every other failure — network, timeout, expired session — falls
+back the same way. You cannot lose your words to this feature.
 
 ## How the text gets in
 
