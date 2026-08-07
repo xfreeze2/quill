@@ -6,7 +6,7 @@ import AVFoundation
 /// Everything Quill needs is a system permission that only the user can grant, and
 /// each one fails silently in its own way: without Accessibility the keyboard
 /// trigger is created but never fed, without the microphone the engine starts and
-/// hears nothing, without a Grok session there is no token to transcribe with.
+/// hears nothing, without credentials there is no token to transcribe with.
 /// Left to discover on their own, people conclude the app is broken.
 ///
 /// So: state every requirement up front, show live whether it is met, and put the
@@ -33,7 +33,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             switch self {
             case .microphone:    return "Microphone"
             case .accessibility: return "Accessibility"
-            case .grokSession:   return "Grok Build sign-in"
+            case .grokSession:   return "xAI credentials"
             }
         }
 
@@ -44,7 +44,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             case .accessibility:
                 return "So the trigger key works, and so Quill can type into other apps."
             case .grokSession:
-                return "Quill transcribes using your Grok subscription. Sign in to the grok command-line tool once."
+                return "Grok Build sign-in (`grok login`), or an xAI API key via XAI_API_KEY / ~/.config/xai/api_key."
             }
         }
 
@@ -71,8 +71,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         var satisfiedNote: String? {
             switch self {
             case .grokSession:
-                guard let email = Auth.load()?.email else { return nil }
-                return email
+                return Auth.load()?.displayName
             default:
                 return nil
             }

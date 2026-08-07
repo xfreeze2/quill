@@ -5,8 +5,8 @@
 Tap a key, talk, then click into whatever window you want the words in. They appear there — at
 the end of what's already written, without touching your clipboard.
 
-Quill transcribes with **your existing Grok subscription**, so there's no API key to buy and
-nothing metered.
+Quill transcribes with **your existing Grok subscription** (nothing metered), or with an
+**xAI API key** if you prefer bring-your-own-key billing.
 
 ---
 
@@ -73,12 +73,30 @@ scrollback and copy/paste all behave exactly as usual.
 | | |
 |---|---|
 | **macOS 12 or newer** | Universal — Apple Silicon and Intel |
-| **A Grok subscription** | Quill uses the login the `grok` CLI stores. Without it there's nothing to transcribe with. |
+| **Grok subscription *or* xAI API key** | Subscription: the login the `grok` CLI stores in `~/.grok/auth.json`. API key: `XAI_API_KEY` / `GROK_CODE_XAI_API_KEY`, or one line in `~/.config/xai/api_key` (needed when Quill is launched from the Dock — GUI apps don't see your shell env). |
 | **Microphone access** | Asked for on first use |
 | **Accessibility access** | So the trigger key works, and so Quill can type into other apps |
 
 The setup window shows all of these live, with a button next to whatever isn't ready. It reopens
 from the menu any time.
+
+### xAI API key (optional)
+
+If you don't have a Grok subscription — or you'd rather bill STT to a console key — drop the key
+in one of these places (first match wins after a live subscription token):
+
+```sh
+# shell (picked up only when Quill is launched from a terminal)
+export XAI_API_KEY=xai-...
+
+# file — also works for Dock / Login Items launches
+mkdir -p ~/.config/xai && chmod 700 ~/.config/xai
+printf '%s\n' "$XAI_API_KEY" > ~/.config/xai/api_key
+chmod 600 ~/.config/xai/api_key
+```
+
+A subscription session always takes priority when it is present and unexpired, so installing an
+API key does not change behaviour for people already signed in via `grok`.
 
 > **If only the corner pill responds and the keyboard does nothing, that's always Accessibility.**
 > macOS lets an app create a keyboard listener without permission and then simply never sends it
@@ -132,8 +150,10 @@ copied is still there when it's done.
 
 - Your audio is streamed to xAI's speech-to-text service to be transcribed. Nothing goes anywhere
   else.
-- Your Grok token is read fresh from `~/.grok/auth.json` at the start of each recording. Quill
-  never copies, stores or transmits it anywhere except to xAI.
+- Credentials are read fresh at the start of each recording: the Grok token from
+  `~/.grok/auth.json`, or your API key from the environment / `~/.config/xai/api_key`. A valid
+  subscription token is preferred when both are present. Quill never copies, stores or transmits
+  credentials anywhere except to xAI.
 - Your last 20 transcripts are kept locally so you can re-copy them. Clear them with
   `defaults delete com.freeze.quill history`.
 - Quill does **not** log keystrokes. A debug trail exists for troubleshooting the trigger key and
@@ -180,8 +200,9 @@ QUILL_SELFTEST=out.pcm ~/Applications/Quill.app/Contents/MacOS/Quill
 
 - Settings live per-machine and don't sync.
 - A recording stops itself after 5 minutes, or after 10 seconds if it hears nothing at all.
-- If your Grok token has expired and `grok` isn't running to refresh it, Quill says so rather than
-  failing quietly.
+- If your Grok token has expired and `grok` isn't running to refresh it, Quill falls back to an
+  API key when one is configured; otherwise it says so rather than failing quietly.
+- STT over an API key is billed by xAI against that key. Subscription transcription is not.
 - Not notarised — see above.
 
 ## Licence

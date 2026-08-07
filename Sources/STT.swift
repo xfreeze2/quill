@@ -17,7 +17,7 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
 
         var message: String {
             switch self {
-            case .unauthorized:      return "Grok session expired — open Grok Build once to refresh"
+            case .unauthorized:      return "Not authorized — refresh Grok Build sign-in, or check your xAI API key"
             case .offline(let m):    return m
             case .server(let m):     return m
             }
