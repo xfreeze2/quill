@@ -259,9 +259,14 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         menu.addItem(versionItem)
 
         let account = Auth.load()
-        let header = NSMenuItem(title: account.map { "Grok Build · \($0.email ?? "signed in")" }
-                                    ?? "Grok Build · not signed in",
-                                action: nil, keyEquivalent: "")
+        let headerTitle: String = {
+            guard let account else { return "xAI · not signed in" }
+            switch account.source {
+            case .subscription: return "Grok Build · \(account.displayName)"
+            case .apiKey:       return "xAI · \(account.displayName)"
+            }
+        }()
+        let header = NSMenuItem(title: headerTitle, action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -535,7 +540,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     private func beginCapture() {
         guard let creds = Auth.load() else {
-            hud.apply(.notice("No Grok Build session found — run `grok` once to sign in"))
+            hud.apply(.notice("No xAI credentials — run `grok login`, or set XAI_API_KEY / ~/.config/xai/api_key"))
             hud.collapse(after: 4)
             return
         }
