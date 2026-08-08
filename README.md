@@ -34,7 +34,7 @@ downloaded from the internet. See [Why the quarantine step](#why-the-quarantine-
 1. **Tap `Control`** — a panel appears in the corner and starts listening.
 2. **Talk.** The transcript streams in live as you speak.
 3. **Finish, any way you like — or just stop talking:**
-   - **say nothing for 3 seconds** — it finishes on its own and pastes. Adjustable, or off
+   - **say nothing for 5 seconds** — it finishes on its own and pastes. Adjustable, or off
    - **say "that's it"** or **"that's all"** — Quill stops and pastes; the phrase itself is never included
    - **click wherever you want the words** — the click both stops it and chooses the destination
    - **tap `Control` again** — lands them where your cursor already is
@@ -94,7 +94,7 @@ Right-click the pill (or the menu-bar icon):
 - **Insert at end of field** — append after existing text rather than at the cursor
 - **Clean up grammar** — off by default; see below
 - **Stop when I say "that's it" or "that's all"** — finish a dictation by voice alone
-- **Finish when I stop talking** — off, or after 1.5 / 3 / 5 seconds of silence
+- **Finish when I stop talking** — off, or after 2 / 3 / 5 / 8 seconds of silence
 - **Language** — 26 languages including Chinese, or auto-detect (which works well — the model
   identifies the language on its own)
 - **Recent** — your last 20 transcripts, click to copy

@@ -32,7 +32,7 @@ enum Defaults {
             trigger: Trigger.control.rawValue,
             singleTap: true,
             stopPhrase: true,
-            pauseSeconds: 3.0,
+            pauseSeconds: 5.0,
             polish: false,
         ])
     }
@@ -75,8 +75,10 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     private var finaliseStartedAt: Date?
     private var pendingVoiceStop: DispatchWorkItem?
     private var lastStopCandidate: String?
-    private var pendingPauseStop: DispatchWorkItem?
-    private var lastPauseCandidate: String?
+    private var pauseTimer: Timer?
+    private var lastVoiceAt = Date()
+    private var lastActivityText: String?
+    private var noiseFloor: Float = 0.02
     private var capturedSelection: Inserter.Selection?
     private var startedAt: Date?
 
@@ -315,7 +317,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         let pauseMenu = NSMenu()
         pauseMenu.autoenablesItems = false
         let pauseOptions: [(String, Double)] = [
-            ("Off", 0), ("After 1.5 seconds", 1.5), ("After 3 seconds", 3.0), ("After 5 seconds", 5.0),
+            ("Off", 0), ("After 2 seconds", 2.0), ("After 3 seconds", 3.0),
+            ("After 5 seconds", 5.0), ("After 8 seconds", 8.0),
         ]
         let currentPause = Defaults.pause
         for (label, seconds) in pauseOptions {
@@ -545,7 +548,6 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         stopReason = .hotkey
         didRunVoiceCommand = false
         lastStopCandidate = nil
-        lastPauseCandidate = nil
 
         client.onReady = { [weak self] in
             guard let self else { return }
@@ -563,7 +565,13 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             }
 
             self.considerVoiceStop(after: text)
-            self.armPauseStop(after: text)
+            // Only NEW words count as activity. The server re-sends an unchanged
+            // partial every couple of hundred milliseconds, so treating every
+            // callback as speech kept the session alive forever.
+            if text != self.lastActivityText {
+                self.lastActivityText = text
+                self.noteVoiceActivity()
+            }
 
             // Show what will actually be inserted, command phrases already removed.
             self.hud.update(text: VoiceCommands.stripAll(text))
@@ -585,7 +593,11 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             else if self.pendingPCM.count < 200 { self.pendingPCM.append(data) }
         }
         recorder.onLevel = { [weak self] level in
-            DispatchQueue.main.async { self?.hud.update(level: level) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.observe(level: level)
+                self.hud.update(level: level)
+            }
         }
 
         if let selfTestPath {
@@ -618,6 +630,10 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         hud.update(target: front.name, icon: front.icon)
         hotkey.watchClicks = Defaults.bool(Defaults.clickToInsert)
         hotkey.watchForCancel(true)
+        lastVoiceAt = Date()
+        lastActivityText = nil
+        noiseFloor = 0.02
+        startPauseWatch()
         Log.write("recording started — watchClicks=\(hotkey.watchClicks)")
 
         tickTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -746,8 +762,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         isRecording = false
         pendingVoiceStop?.cancel()
         pendingVoiceStop = nil
-        pendingPauseStop?.cancel()
-        pendingPauseStop = nil
+        pauseTimer?.invalidate()
+        pauseTimer = nil
         hotkey.watchClicks = false
         hotkey.watchForCancel(false)
         invalidateTimers()
@@ -759,26 +775,46 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         hud.collapse(after: 0.9)
     }
 
-    /// Finish once the words stop arriving.
+    /// Finish once the microphone actually goes quiet.
     ///
-    /// Silence is judged by the transcript going quiet rather than by microphone
-    /// level, because a noisy room keeps the level up while nobody is speaking.
-    /// The timer only restarts when the words actually change, so a server
-    /// re-sending an unchanged partial cannot hold the session open forever.
-    private func armPauseStop(after text: String) {
-        let window = Defaults.pause
-        guard window > 0, isRecording, !text.isEmpty, text != lastPauseCandidate else { return }
-        lastPauseCandidate = text
+    /// This used to watch the transcript instead, which was wrong: transcript
+    /// updates lag speech and gap between segments, so after the server finalised
+    /// one sentence no new text arrived for several seconds while the user was
+    /// still mid-sentence — and the session ended under them.
+    ///
+    /// Silence now means both signals are quiet: nothing above the noise floor on
+    /// the microphone, and no new words. Either one alone keeps the session open.
+    private func noteVoiceActivity() {
+        lastVoiceAt = Date()
+    }
 
-        pendingPauseStop?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.isRecording else { return }
-            Log.write("pause stop: \(String(format: "%.1f", window))s without new speech")
+    /// Level is judged against a floor that adapts to the room, so a noisy
+    /// environment does not read as constant speech and block the stop forever.
+    private func observe(level: Float) {
+        if level < noiseFloor {
+            noiseFloor = noiseFloor * 0.90 + level * 0.10      // settle downward quickly
+        } else {
+            noiseFloor = noiseFloor * 0.995 + level * 0.005    // rise only slowly
+        }
+        if level > max(0.07, noiseFloor * 2.5) { noteVoiceActivity() }
+    }
+
+    private func startPauseWatch() {
+        pauseTimer?.invalidate()
+        guard Defaults.pause > 0 else { return }
+        pauseTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let quiet = Date().timeIntervalSince(self.lastVoiceAt)
+            let window = Defaults.pause
+            if ProcessInfo.processInfo.environment["QUILL_TRACE_STOP"] != nil {
+                Log.write("  tick rec=\(self.isRecording) sawText=\(self.sawAnyText) "
+                    + "quiet=\(String(format: "%.1f", quiet)) window=\(window)")
+            }
+            guard self.isRecording, self.sawAnyText, window > 0, quiet >= window else { return }
+            Log.write("pause stop: \(String(format: "%.1f", quiet))s of silence")
             self.hud.flashTarget("finishing…", for: 2)
             self.stopSession(reason: .voice)
         }
-        pendingPauseStop = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + window, execute: work)
     }
 
     private func stopSession(reason: StopReason) {
@@ -787,8 +823,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         stopReason = reason
         pendingVoiceStop?.cancel()
         pendingVoiceStop = nil
-        pendingPauseStop?.cancel()
-        pendingPauseStop = nil
+        pauseTimer?.invalidate()
+        pauseTimer = nil
         hotkey.watchClicks = false
         hotkey.watchForCancel(false)
         invalidateTimers()
@@ -918,8 +954,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         isRecording = false
         pendingVoiceStop?.cancel()
         pendingVoiceStop = nil
-        pendingPauseStop?.cancel()
-        pendingPauseStop = nil
+        pauseTimer?.invalidate()
+        pauseTimer = nil
         hotkey.watchClicks = false
         hotkey.watchForCancel(false)
         invalidateTimers()
@@ -932,7 +968,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     }
 
     private func invalidateTimers() {
-        [silenceTimer, maxDurationTimer, tickTimer, selfTestTimer].forEach { $0?.invalidate() }
+        [silenceTimer, maxDurationTimer, tickTimer, selfTestTimer, pauseTimer].forEach { $0?.invalidate() }
         silenceTimer = nil
         maxDurationTimer = nil
         tickTimer = nil
