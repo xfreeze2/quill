@@ -143,7 +143,9 @@ Quill doesn't simulate `⌘V` and doesn't touch your clipboard.
 
 1. It asks Accessibility for the focused element.
 2. It reads what's already in that field and puts the caret after the last character.
-3. It writes the text into the selection, joining with a space if needed.
+3. It writes the text into the selection, adding a space on either side if the words would
+   otherwise run together — but not after an opening bracket, before a comma, or where there's
+   already a space or a line break.
 
 Terminals, canvases and most web views expose no editable text to Accessibility. Those fall back
 to a synthetic `⌘V` — but the caret is still moved to the end first where possible, and your

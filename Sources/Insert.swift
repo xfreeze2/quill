@@ -200,16 +200,31 @@ enum Inserter {
             return
         }
 
+        // Read the field before touching the caret, so the spacing decision does
+        // not depend on being able to move it. Apps that refuse to set the caret —
+        // terminals report selRangeSettable=false — were previously skipping the
+        // separator entirely, which ran dictation straight into the existing text.
+        let existing = focusedValue()
+        let caretBefore = caretOffset()
+
         // Move the caret to the end FIRST, independently of how the text gets in.
         // Plenty of apps let us set the selection range but not the selected text,
         // and those must still receive the words after what is already there —
         // otherwise a ⌘V fallback drops them at the caret, which is how dictation
         // ends up interleaved through a half-written sentence.
-        if atEndOfField, let existing = moveCaretToEnd() {
-            if let last = existing.last, !last.isWhitespace {
-                payload = " " + text
-            }
-        }
+        var landingAtEnd = false
+        if atEndOfField { landingAtEnd = moveCaretToEnd() != nil }
+
+        // Whatever we could not move stays where the user left it, so judge the
+        // boundary by the actual insertion point rather than assuming the end.
+        let boundaryOffset = landingAtEnd ? existing?.utf16.count : (caretBefore ?? existing?.utf16.count)
+        // Both sides matter. Text dropped at the caret has something after it as
+        // well as before, and only padding the front still runs it into whatever
+        // follows.
+        let before = needsSeparator(before: existing, at: boundaryOffset, inserting: payload)
+        let after = needsTrailingSeparator(in: existing, at: boundaryOffset, inserting: payload)
+        if before { payload = " " + payload }
+        if after { payload += " " }
 
         let forceClipboard = ProcessInfo.processInfo.environment["QUILL_FORCE_CLIPBOARD"] != nil
         if !forceClipboard, setSelectedText(payload), confirmLanded(payload) {
@@ -234,6 +249,82 @@ enum Inserter {
         guard !needle.isEmpty else { return true }
         let tail = String(needle.suffix(24))
         return readback.contains(tail)
+    }
+
+    /// The focused field's current contents, without disturbing anything.
+    private static func focusedValue() -> String? {
+        guard let element = focusedElement() else { return nil }
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef) == .success
+        else { return nil }
+        return valueRef as? String
+    }
+
+    /// Where the caret currently sits, in UTF-16 units.
+    private static func caretOffset() -> Int? {
+        guard let element = focusedElement() else { return nil }
+        var rangeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString,
+                                            &rangeRef) == .success,
+              let value = rangeRef, CFGetTypeID(value) == AXValueGetTypeID()
+        else { return nil }
+        var range = CFRange()
+        // swiftlint:disable:next force_cast
+        guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+        return range.location + range.length
+    }
+
+    /// Should a space go between what is already there and what we are adding?
+    ///
+    /// Only when the two would otherwise collide: there is text before the
+    /// insertion point, it does not already end in whitespace or an opening
+    /// bracket, and the new text does not begin with punctuation that belongs
+    /// tight against the previous word.
+    private static func needsSeparator(before existing: String?,
+                                       at offset: Int?,
+                                       inserting text: String) -> Bool {
+        guard let existing, !existing.isEmpty, let offset, offset > 0 else { return false }
+        guard let boundary = character(in: existing, before: offset) else { return false }
+
+        if boundary.isWhitespace || boundary.isNewline { return false }
+        if "([{<\u{201C}\u{2018}\"'-–—/@#".contains(boundary) { return false }
+
+        if let first = text.first, ",.;:!?)]}%\u{201D}\u{2019}".contains(first) { return false }
+        return true
+    }
+
+    /// Should a space go between what we are adding and what already follows?
+    ///
+    /// Only relevant when landing mid-text — appending at the end has nothing
+    /// after it. Mirrors the leading rule: skip it if the next character is
+    /// already whitespace, or is punctuation that belongs tight against a word.
+    private static func needsTrailingSeparator(in existing: String?,
+                                               at offset: Int?,
+                                               inserting text: String) -> Bool {
+        guard let existing, let offset, offset < existing.utf16.count else { return false }
+        guard let next = character(in: existing, atOrAfter: offset) else { return false }
+
+        if next.isWhitespace || next.isNewline { return false }
+        if ",.;:!?)]}%\u{201D}\u{2019}".contains(next) { return false }
+
+        if let last = text.last, last.isWhitespace { return false }
+        return true
+    }
+
+    private static func character(in text: String, atOrAfter utf16Offset: Int) -> Character? {
+        let units = text.utf16
+        guard utf16Offset >= 0, utf16Offset < units.count else { return nil }
+        let position = units.index(units.startIndex, offsetBy: utf16Offset)
+        guard let index = String.Index(position, within: text), index < text.endIndex else { return nil }
+        return text[index]
+    }
+
+    private static func character(in text: String, before utf16Offset: Int) -> Character? {
+        let units = text.utf16
+        guard utf16Offset > 0, utf16Offset <= units.count else { return nil }
+        let end = units.index(units.startIndex, offsetBy: utf16Offset)
+        guard let index = String.Index(end, within: text), index > text.startIndex else { return nil }
+        return text[text.index(before: index)]
     }
 
     private static func focusedElement() -> AXUIElement? {
