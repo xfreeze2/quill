@@ -73,7 +73,7 @@ scrollback and copy/paste all behave exactly as usual.
 | | |
 |---|---|
 | **macOS 12 or newer** | Universal — Apple Silicon and Intel |
-| **A Grok subscription** | Quill uses the login the `grok` CLI stores. Without it there's nothing to transcribe with. |
+| **A Grok subscription _or_ an xAI API key** | Quill uses the login the `grok` CLI already stores. No subscription? Add your own key from [console.x.ai](https://console.x.ai) and usage is billed to your account. |
 | **Microphone access** | Asked for on first use |
 | **Accessibility access** | So the trigger key works, and so Quill can type into other apps |
 
@@ -151,6 +151,25 @@ Terminals, canvases and most web views expose no editable text to Accessibility.
 to a synthetic `⌘V` — but the caret is still moved to the end first where possible, and your
 previous clipboard contents are snapshotted and restored afterwards. Either way, what you had
 copied is still there when it's done.
+
+## Using your own xAI API key
+
+No Grok subscription? Choose **Use my own xAI API key…** from the menu and paste a key from
+[console.x.ai](https://console.x.ai). Quill checks it against xAI before saving, so a typo shows
+up straight away rather than mid-dictation. If both a key and a Grok session are present, the key
+wins — you chose it deliberately.
+
+**How the key is handled**
+
+- Stored in your Mac's **Keychain**, never in preferences. A value in `UserDefaults` becomes a
+  plist under `~/Library/Preferences` that any process running as you can read, and it would be
+  swept into backups and sync. A billable credential has no business sitting there.
+- Marked `WhenUnlockedThisDeviceOnly`: unreadable while the Mac is locked, never carried to
+  another machine by iCloud Keychain, never restored from a backup onto different hardware.
+- Entered in a secure field, so it is never drawn on screen or captured by a screenshot.
+- **Never written to the log.** Only whether a save or a check succeeded, and the HTTP status.
+- Only ever sent to `api.x.ai`, over TLS.
+- Remove it any time from the same menu item.
 
 ## Privacy
 

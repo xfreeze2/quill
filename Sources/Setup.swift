@@ -33,7 +33,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             switch self {
             case .microphone:    return "Microphone"
             case .accessibility: return "Accessibility"
-            case .grokSession:   return "Grok Build sign-in"
+            case .grokSession:
+                return Keychain.hasKey ? "xAI API key" : "Grok sign-in or API key"
             }
         }
 
@@ -44,7 +45,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             case .accessibility:
                 return "So the trigger key works, and so Quill can type into other apps."
             case .grokSession:
-                return "Quill transcribes using your Grok subscription. Sign in to the grok command-line tool once."
+                return "Sign in to the grok command-line tool once, or use your own xAI API key."
             }
         }
 
@@ -52,7 +53,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             switch self {
             case .microphone:    return "Allow"
             case .accessibility: return "Open Settings"
-            case .grokSession:   return nil
+            case .grokSession:   return "Use a key"
             }
         }
 
@@ -63,7 +64,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             case .accessibility:
                 return AXIsProcessTrusted()
             case .grokSession:
-                return Auth.load() != nil
+                return Auth.current() != nil
             }
         }
 
@@ -71,8 +72,11 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         var satisfiedNote: String? {
             switch self {
             case .grokSession:
-                guard let email = Auth.load()?.email else { return nil }
-                return email
+                guard let creds = Auth.current() else { return nil }
+                switch creds.source {
+                case .apiKey:    return "Your own key — \(Keychain.redacted ?? "stored in Keychain")"
+                case .grokBuild: return creds.email ?? "Signed in"
+                }
             default:
                 return nil
             }
@@ -187,7 +191,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             Inserter.requestTrust()
             Inserter.openPrivacyPane("Privacy_Accessibility")
         case .grokSession:
-            break
+            APIKeyPrompt.show()
+            update()
         }
     }
 

@@ -179,7 +179,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.toggle() }
         } else {
             let firstRun = !Defaults.bool(Defaults.didShowSetup)
-            let missingSomething = !Inserter.isTrusted || Auth.load() == nil
+            let missingSomething = !Inserter.isTrusted || Auth.current() == nil
                 || AVCaptureDevice.authorizationStatus(for: .audio) != .authorized
             if firstRun || missingSomething {
                 UserDefaults.standard.set(true, forKey: Defaults.didShowSetup)
@@ -258,10 +258,14 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         versionItem.isEnabled = false
         menu.addItem(versionItem)
 
-        let account = Auth.load()
-        let header = NSMenuItem(title: account.map { "Grok Build · \($0.email ?? "signed in")" }
-                                    ?? "Grok Build · not signed in",
-                                action: nil, keyEquivalent: "")
+        let account = Auth.current()
+        let headerText: String
+        switch account?.source {
+        case .apiKey:    headerText = "xAI API key · \(Keychain.redacted ?? "set")"
+        case .grokBuild: headerText = "Grok Build · \(account?.email ?? "signed in")"
+        case nil:        headerText = "Not signed in"
+        }
+        let header = NSMenuItem(title: headerText, action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -378,6 +382,11 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         menu.addItem(login)
         menu.addItem(.separator())
 
+        let keyItem = NSMenuItem(title: Keychain.hasKey ? "Change xAI API key…" : "Use my own xAI API key…",
+                                 action: #selector(editAPIKey), keyEquivalent: "")
+        keyItem.target = self
+        menu.addItem(keyItem)
+
         let setupItem = NSMenuItem(title: Inserter.isTrusted ? "Setup…" : "Finish setup…",
                                    action: #selector(openSetup), keyEquivalent: "")
         setupItem.target = self
@@ -492,6 +501,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     @objc private func openSetup() { setup.show() }
 
+    @objc private func editAPIKey() { APIKeyPrompt.show() }
+
     @objc private func quit() { NSApp.terminate(nil) }
 
     // MARK: Session
@@ -534,7 +545,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     }
 
     private func beginCapture() {
-        guard let creds = Auth.load() else {
+        guard let creds = Auth.current() else {
             hud.apply(.notice("No Grok Build session found — run `grok` once to sign in"))
             hud.collapse(after: 4)
             return
@@ -859,7 +870,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         remember(trimmed)
         hud.update(text: trimmed)
 
-        guard Defaults.bool(Defaults.polish), let creds = Auth.load() else {
+        guard Defaults.bool(Defaults.polish), let creds = Auth.current() else {
             completeSession(with: trimmed)
             return
         }
