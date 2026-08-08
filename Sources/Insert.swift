@@ -21,10 +21,21 @@ enum Log {
         return f
     }()
 
+    private static let maxBytes = 512 * 1024
+
     static func write(_ message: String) {
         let line = "\(formatter.string(from: Date()))  \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
         let url = URL(fileURLWithPath: path)
+
+        // Keep only the recent tail. An unbounded log on a machine used every day
+        // accumulates a long record of which apps were dictated into and when.
+        if let size = try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int,
+           size > maxBytes,
+           let existing = try? String(contentsOfFile: path, encoding: .utf8) {
+            let kept = existing.suffix(maxBytes / 2)
+            try? String(kept).write(to: url, atomically: true, encoding: .utf8)
+        }
         if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
@@ -151,7 +162,10 @@ enum Inserter {
         // swiftlint:disable:next force_cast
         guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
 
-        Log.write("captured selection: \(range.length) chars — \"\(selected.prefix(40))\"")
+        // Length only. This used to log the first 40 characters of the selection,
+        // which put whatever the user had highlighted — a password, a key, private
+        // text — into a plaintext file on disk.
+        Log.write("captured selection: \(range.length) chars")
         return Selection(element: element, range: range, text: selected)
     }
 

@@ -177,12 +177,14 @@ wins — you chose it deliberately.
   else.
 - Your Grok token is read fresh from `~/.grok/auth.json` at the start of each recording. Quill
   never copies, stores or transmits it anywhere except to xAI.
-- Your last 20 transcripts are kept locally so you can re-copy them. Clear them with
-  `defaults delete com.freeze.quill history`.
+- Your last 20 transcripts are kept locally so you can re-copy them from the menu. They live in
+  preferences as **plain text**, so if you dictate anything private, use **Recent ▸ Clear recent**
+  or switch **Keep recent transcripts** off — that also wipes what's already stored.
 - Quill does **not** log keystrokes. A debug trail exists for troubleshooting the trigger key and
   stays off unless you explicitly turn it on.
 - `~/Library/Logs/Quill.log` records what it did — which app it wrote into, and whether the text
-  landed.
+  landed. It records **no transcript content and no credentials**: a replaced selection is logged
+  as a character count, never its text. The file is capped so it can't accumulate indefinitely.
 
 ## Why the quarantine step
 

@@ -22,6 +22,7 @@ enum Defaults {
     static let stopPhrase = "stopPhrase"
     static let pauseSeconds = "pauseSeconds"
     static let polish = "polish"
+    static let keepHistory = "keepHistory"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -34,6 +35,7 @@ enum Defaults {
             stopPhrase: true,
             pauseSeconds: 5.0,
             polish: false,
+            keepHistory: true,
         ])
     }
 
@@ -282,8 +284,9 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         let history = UserDefaults.standard.stringArray(forKey: Defaults.history) ?? []
-        if !history.isEmpty {
+        do {
             let recent = NSMenu()
+            recent.autoenablesItems = false
             for (index, entry) in history.prefix(8).enumerated() {
                 let title = entry.count > 60 ? String(entry.prefix(60)) + "…" : entry
                 let item = NSMenuItem(title: title, action: #selector(copyHistory(_:)), keyEquivalent: "")
@@ -291,6 +294,17 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                 item.tag = index
                 recent.addItem(item)
             }
+            recent.addItem(.separator())
+            let clear = NSMenuItem(title: "Clear recent", action: #selector(clearHistory), keyEquivalent: "")
+            clear.target = self
+            recent.addItem(clear)
+            let keep = NSMenuItem(title: "Keep recent transcripts",
+                                  action: #selector(toggleKeepHistory), keyEquivalent: "")
+            keep.target = self
+            keep.state = Defaults.bool(Defaults.keepHistory) ? .on : .off
+            keep.toolTip = "Stored in preferences as plain text. Turn off if you dictate anything private."
+            recent.addItem(keep)
+
             let recentItem = NSMenuItem(title: "Recent", action: nil, keyEquivalent: "")
             menu.addItem(recentItem)
             menu.setSubmenu(recent, for: recentItem)
@@ -502,6 +516,23 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     @objc private func openSetup() { setup.show() }
 
     @objc private func editAPIKey() { APIKeyPrompt.show() }
+
+    @objc private func clearHistory() {
+        UserDefaults.standard.removeObject(forKey: Defaults.history)
+        Log.write("recent transcripts cleared")
+        hud.apply(.notice("Recent transcripts cleared"))
+        hud.collapse(after: 2)
+    }
+
+    @objc private func toggleKeepHistory() {
+        Defaults.flip(Defaults.keepHistory)
+        let on = Defaults.bool(Defaults.keepHistory)
+        if !on { UserDefaults.standard.removeObject(forKey: Defaults.history) }
+        Log.write("keep recent transcripts = \(on)")
+        hud.apply(.notice(on ? "Keeping recent transcripts"
+                             : "Not keeping transcripts — existing ones cleared"))
+        hud.collapse(after: 2.5)
+    }
 
     @objc private func quit() { NSApp.terminate(nil) }
 
@@ -986,7 +1017,13 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         selfTestTimer = nil
     }
 
+    /// Recent dictations, for re-copying from the menu.
+    ///
+    /// These live in preferences, which is a plaintext plist — fine for a shopping
+    /// list, less so if someone dictates something private. Hence the switch, and
+    /// a way to wipe them.
     private func remember(_ text: String) {
+        guard Defaults.bool(Defaults.keepHistory) else { return }
         var history = UserDefaults.standard.stringArray(forKey: Defaults.history) ?? []
         history.insert(text, at: 0)
         UserDefaults.standard.set(Array(history.prefix(20)), forKey: Defaults.history)
