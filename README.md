@@ -100,6 +100,10 @@ Right-click the pill (or the menu-bar icon):
 - **Recent** — your last 20 transcripts, click to copy
 - **Appearance** — "Show idle pill" (hide the resting dot entirely; the trigger key, menu-bar icon
   and the session bar while dictating all keep working) and "Reset panel position"
+- **Notify about updates** — checks GitHub once a day, never during a recording; **Check for
+  updates…** does it on demand. Never downloads or installs anything itself — it points you at
+  the same install command, because Quill is self-signed and not notarised, and an app quietly
+  replacing its own binary is the same behaviour malware uses to persist.
 - **Start at login**
 
 ### About the trigger key

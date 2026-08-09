@@ -23,6 +23,11 @@ enum Defaults {
     static let pauseSeconds = "pauseSeconds"
     static let polish = "polish"
     static let keepHistory = "keepHistory"
+    static let notifyUpdates = "notifyUpdates"
+    static let lastUpdateCheck = "lastUpdateCheck"
+    static let availableUpdateVersion = "availableUpdateVersion"
+    static let availableUpdateURL = "availableUpdateURL"
+    static let notifiedUpdateVersion = "notifiedUpdateVersion"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -36,6 +41,7 @@ enum Defaults {
             pauseSeconds: 5.0,
             polish: false,
             keepHistory: true,
+            notifyUpdates: true,
         ])
     }
 
@@ -180,6 +186,11 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         if selfTestPath != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.toggle() }
         } else {
+            if Defaults.bool(Defaults.notifyUpdates) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                    self?.checkForUpdate(announce: true)
+                }
+            }
             let firstRun = !Defaults.bool(Defaults.didShowSetup)
             let missingSomething = !Inserter.isTrusted || Auth.current() == nil
                 || AVCaptureDevice.authorizationStatus(for: .audio) != .authorized
@@ -259,6 +270,13 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         let versionItem = NSMenuItem(title: "Quill \(Build.version)", action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
+
+        if let update = Updater.cachedUpdate() {
+            let updateItem = NSMenuItem(title: "⬆︎ Update to \(update.version) available…",
+                                        action: #selector(openUpdatePage), keyEquivalent: "")
+            updateItem.target = self
+            menu.addItem(updateItem)
+        }
 
         let account = Auth.current()
         let headerText: String
@@ -401,6 +419,12 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         keyItem.target = self
         menu.addItem(keyItem)
 
+        addToggle(to: menu, title: "Notify about updates", key: Defaults.notifyUpdates,
+                  action: #selector(toggleNotifyUpdates))
+        let checkItem = NSMenuItem(title: "Check for updates…", action: #selector(checkForUpdateNow), keyEquivalent: "")
+        checkItem.target = self
+        menu.addItem(checkItem)
+
         let setupItem = NSMenuItem(title: Inserter.isTrusted ? "Setup…" : "Finish setup…",
                                    action: #selector(openSetup), keyEquivalent: "")
         setupItem.target = self
@@ -516,6 +540,43 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     @objc private func openSetup() { setup.show() }
 
     @objc private func editAPIKey() { APIKeyPrompt.show() }
+
+    /// `announce` shows a one-time toast the first time a given version is
+    /// found, and only while nothing is being dictated — an update notice has
+    /// no business interrupting a recording in progress.
+    private func checkForUpdate(force: Bool = false, announce: Bool = false) {
+        Updater.checkForUpdate(force: force) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                if force {
+                    self.hud.apply(.notice("Couldn't check for updates — \(error.message)"))
+                    self.hud.collapse(after: 3)
+                }
+            case .success(let update):
+                if force {
+                    let text = update.map { "Quill \($0.version) is available" } ?? "You're on the latest version"
+                    self.hud.apply(.notice(text))
+                    self.hud.collapse(after: update == nil ? 2 : 5)
+                }
+                guard announce, let update, !self.isRecording else { return }
+                let alreadyNotified = UserDefaults.standard.string(forKey: Defaults.notifiedUpdateVersion)
+                guard alreadyNotified != update.version else { return }
+                UserDefaults.standard.set(update.version, forKey: Defaults.notifiedUpdateVersion)
+                self.hud.apply(.notice("Quill \(update.version) is available — see the menu"))
+                self.hud.collapse(after: 5)
+            }
+        }
+    }
+
+    @objc private func checkForUpdateNow() { checkForUpdate(force: true) }
+
+    @objc private func openUpdatePage() {
+        guard let url = Updater.cachedUpdate()?.url else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func toggleNotifyUpdates() { Defaults.flip(Defaults.notifyUpdates) }
 
     @objc private func clearHistory() {
         UserDefaults.standard.removeObject(forKey: Defaults.history)
