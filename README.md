@@ -103,7 +103,11 @@ Right-click the pill (or the menu-bar icon):
 - **Notify about updates** — checks GitHub once a day, never during a recording; **Check for
   updates…** does it on demand. Never downloads or installs anything itself — it points you at
   the same install command, because Quill is self-signed and not notarised, and an app quietly
-  replacing its own binary is the same behaviour malware uses to persist.
+  replacing its own binary is the same behaviour malware uses to persist. The check uses GitHub's
+  ordinary release-page redirect rather than the REST API, so it isn't subject to the 60
+  requests/hour/IP limit that API calls share with everything else on your network — if that path
+  is ever unreachable it falls back to the API and gives an honest "rate limited, try again in Nm"
+  rather than a bare HTTP code.
 - **Start at login**
 
 ### About the trigger key

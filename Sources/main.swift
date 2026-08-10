@@ -183,7 +183,18 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         }
         refreshIcon()
 
-        if selfTestPath != nil {
+        if let checkOnly = ProcessInfo.processInfo.environment["QUILL_TEST_UPDATE_CHECK"] {
+            let force = checkOnly == "force"
+            Updater.checkForUpdate(force: force) { result in
+                switch result {
+                case .success(let update):
+                    FileHandle.standardError.write(Data("UPDATE RESULT: success update=\(String(describing: update.map { ($0.version, $0.url.absoluteString) }))\n".utf8))
+                case .failure(let err):
+                    FileHandle.standardError.write(Data("UPDATE RESULT: failure raw=\"\(err.message)\" display=\"\(err.displayMessage)\" isRateLimit=\(err.isRateLimit)\n".utf8))
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
+            }
+        } else if selfTestPath != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.toggle() }
         } else {
             if Defaults.bool(Defaults.notifyUpdates) {
@@ -550,7 +561,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             switch result {
             case .failure(let error):
                 if force {
-                    self.hud.apply(.notice("Couldn't check for updates — \(error.message)"))
+                    self.hud.apply(.notice("Couldn't check for updates — \(error.displayMessage)"))
                     self.hud.collapse(after: 3)
                 }
             case .success(let update):
