@@ -20,6 +20,19 @@ enum VoiceCommandsTest {
             }
         }
 
+        // Mirrors main.swift: fire on the first matching partial, then never again.
+        func fired(on partials: [String]) -> Int {
+            var didRun = false
+            var count = 0
+            for text in partials where !text.isEmpty {
+                if !didRun, VoiceCommands.containsOpenGrok(text) {
+                    didRun = true
+                    count += 1
+                }
+            }
+            return count
+        }
+
         func expectEqual(_ name: String, _ got: String, _ want: String) {
             if got == want {
                 print("ok   \(name)")
@@ -46,6 +59,28 @@ enum VoiceCommandsTest {
         expect("mid: open grok build later",
                !VoiceCommands.containsOpenGrok("can you open Grok Build after this"))
         expect("unrelated open", !VoiceCommands.containsOpenGrok("open the document"))
+        // Real phrases from the dictation that hit the old bug.
+        expect("mid: spoken report",
+               !VoiceCommands.containsOpenGrok(
+                "It opens croc. But the problem is If somebody's already in the middle of talking"))
+        expect("mid: whenever somebody says",
+               !VoiceCommands.containsOpenGrok("In the middle whenever somebody says open Grok"))
+        expect("start-with-Grok is not a command",
+               !VoiceCommands.containsOpenGrok("Grok, then it shouldn't open"))
+
+        // How the app actually sees speech: growing partials, fire at most once.
+        expect("stream mid never fires",
+               fired(on: ["I think",
+                          "I think we should",
+                          "I think we should open",
+                          "I think we should open Grok",
+                          "I think we should open Grok and try that"]) == 0)
+        expect("stream start fires once",
+               fired(on: ["open",
+                          "open Grok",
+                          "open Grok, write me a haiku"]) == 1)
+        expect("stream start after please",
+               fired(on: ["please", "please open", "please open grok"]) == 1)
 
         // Strip only the leading command; leave mid-sentence words alone.
         expectEqual("strip start",
