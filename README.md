@@ -67,9 +67,14 @@ removed from the inserted text**, so it never ends up in a prompt. Speech-to-tex
 If you say it in the middle of a sentence — "I think we should open Grok and try that" — it is
 left alone. Those words stay in the transcript and nothing launches.
 
-It opens Ghostty if you have it, otherwise Terminal, using an ordinary new window running a normal
-login shell — the same thing as opening a terminal and typing `grok` yourself, so your theme,
-scrollback and copy/paste all behave exactly as usual.
+It opens a new window in the Ghostty you already have (⌘N), or launches Ghostty if it is not
+running, then types `grok` — the same thing as doing it by hand, so your theme, scrollback and
+copy/paste all behave exactly as usual. It does **not** start a second copy of Ghostty; that
+instance looks wrong and cannot select or copy.
+
+After Grok opens, clicks in that window are yours again — select, copy, scroll — they no longer
+end the dictation. The rest of what you said still becomes the prompt when you pause, say
+"that's it", or tap the trigger.
 
 ## What you need
 

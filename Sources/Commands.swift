@@ -72,11 +72,12 @@ enum VoiceCommands {
 
 /// Opens Grok Build the way you would by hand.
 ///
-/// `ghostty -e grok` is explicitly unsupported on macOS — Ghostty's own help says
-/// so — and it produces a session with the wrong appearance and broken copy and
-/// paste. The supported path, `open -na Ghostty.app`, gives a completely ordinary
-/// window running a normal login shell; then `grok` is typed into it, which is
-/// exactly the sequence a person performs.
+/// `ghostty -e grok` is unsupported on macOS and produces a session with the
+/// wrong appearance and broken copy and paste. `open -n` is the same class of
+/// damage: it starts a *second* Ghostty, not a new window in the one you
+/// already use, and that extra instance cannot select or copy like a normal
+/// window. The path that matches a person is: if Ghostty is running, bring it
+/// forward and press ⌘N; if it is not, `open -a Ghostty.app`. Then type `grok`.
 ///
 /// The risk in typing is hitting the wrong window, so the command is only sent
 /// once a NEW Ghostty window exists and Ghostty is frontmost. Window counting goes
@@ -108,18 +109,49 @@ enum GrokLauncher {
         }
     }
 
+    /// Puts the Ghostty (or Terminal) we launched back in front so the prompt
+    /// lands in that session, not whatever happened to steal focus.
+    static func bringToFront() {
+        if ghosttyInstalled {
+            _ = activateGhostty()
+        } else {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            task.arguments = ["-a", "Terminal"]
+            try? task.run()
+        }
+    }
+
     // MARK: Ghostty
 
     /// Returns nil if Ghostty could not be driven, so the caller can fall back.
     private static func viaGhostty() -> Outcome? {
+        let alreadyRunning = !NSRunningApplication
+            .runningApplications(withBundleIdentifier: ghosttyBundleID).isEmpty
         let before = ghosttyWindowCount()
 
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = ["-na", "Ghostty.app"]
-        do { try task.run() } catch {
-            Log.write("  ghostty: open failed — \(error.localizedDescription)")
-            return nil
+        if alreadyRunning {
+            guard activateGhostty() else {
+                Log.write("  ghostty: could not activate the running app")
+                return nil
+            }
+            // Give activation a beat so ⌘N cannot land in the previous app.
+            usleep(220_000)
+            guard frontmostBundleID == ghosttyBundleID else {
+                Log.write("  ghostty: activate did not bring it frontmost")
+                return nil
+            }
+            pressCommandN()
+            Log.write("  ghostty: ⌘N in the existing app (\(before) windows)")
+        } else {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            // No `-n`: a second instance is what broke copy and select.
+            task.arguments = ["-a", "Ghostty.app"]
+            do { try task.run() } catch {
+                Log.write("  ghostty: open failed — \(error.localizedDescription)")
+                return nil
+            }
         }
 
         // Wait for a genuinely new window that is also frontmost.
@@ -150,6 +182,23 @@ enum GrokLauncher {
         usleep(80_000)
         pressReturn()
         return .opened("Ghostty")
+    }
+
+    @discardableResult
+    private static func activateGhostty() -> Bool {
+        // `open -a` brings the existing app forward. NSRunningApplication.activate
+        // with ignoringOtherApps is a no-op on macOS 14+, so it cannot be used
+        // to steal focus before we press ⌘N.
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-a", "Ghostty.app"]
+        do {
+            try task.run()
+            task.waitUntilExit()
+            return task.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     private static var frontmostBundleID: String? {
@@ -229,5 +278,21 @@ enum GrokLauncher {
         usleep(20_000)
         CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)?
             .post(tap: .cgAnnotatedSessionEventTap)
+    }
+
+    /// Ghostty's own binding: super+n = new_window. Same instance, ordinary window.
+    private static func pressCommandN() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        source?.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitLocalKeyboardEvents],
+            state: .eventSuppressionStateSuppressionInterval)
+        let n: CGKeyCode = 45
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: n, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: n, keyDown: false)
+        else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cgAnnotatedSessionEventTap)
+        up.post(tap: .cgAnnotatedSessionEventTap)
     }
 }

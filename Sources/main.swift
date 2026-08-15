@@ -80,6 +80,9 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     private var sawAnyText = false
     private var stopReason: StopReason = .hotkey
     private var didRunVoiceCommand = false
+    /// Once "open Grok" has launched a session, clicks are for using that
+    /// session (select, copy), not for picking a Quill destination.
+    private var deliverToOpenedGrok = false
     private var finaliseStartedAt: Date?
     private var pendingVoiceStop: DispatchWorkItem?
     private var lastStopCandidate: String?
@@ -661,6 +664,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         sawAnyText = false
         stopReason = .hotkey
         didRunVoiceCommand = false
+        deliverToOpenedGrok = false
         lastStopCandidate = nil
 
         client.onReady = { [weak self] in
@@ -825,6 +829,12 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch outcome {
             case .opened(let terminal):
+                // A click in the new Grok window used to be treated as
+                // "insert here", which posted ⌘V into the TUI and made
+                // select/copy impossible. The destination is already Grok.
+                self.hotkey.watchClicks = false
+                self.deliverToOpenedGrok = true
+                Log.write("  click-to-insert off — Grok is the destination")
                 self.hud.flashTarget("Grok Build opened in \(terminal)", for: 2)
             case .failed(let message):
                 Log.write("  open Grok failed — \(message)")
@@ -1038,9 +1048,15 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         // After a click we wait a beat: the click still has to land, focus has to
         // settle, and the app has to place its caret before we write into it.
         let settle: TimeInterval = (stopReason == .click) ? 0.22 : 0.16
+        if deliverToOpenedGrok {
+            GrokLauncher.bringToFront()
+        }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + settle) { [weak self] in
             guard let self else { return }
+            if self.deliverToOpenedGrok {
+                GrokLauncher.bringToFront()
+            }
             let selection = self.capturedSelection
             self.capturedSelection = nil
             Inserter.insert(trimmed,
