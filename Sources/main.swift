@@ -815,8 +815,9 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             + "socketReady=\(socketReady) sawText=\(sawAnyText)")
     }
 
-    /// Opens Grok Build without interrupting the recording — the mic keeps running
-    /// so the rest of the sentence still becomes the prompt.
+    /// Opens Grok Build without interrupting the recording. Only fired when the
+    /// transcript *starts* with the command, so the rest of that opening
+    /// sentence can still become the prompt.
     private func runOpenGrok() {
         Log.write("voice command: open Grok")
         hud.flashTarget("opening Grok Build…", for: 8)

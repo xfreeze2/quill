@@ -3,15 +3,21 @@ import ApplicationServices
 
 /// Spoken commands that act while you keep talking.
 ///
-/// The phrase is always removed from the text that gets inserted — saying
-/// "open Grok, now write me a haiku" must open Grok and type only the haiku.
+/// "open Grok" is only a command when it is the first thing said. Mid-sentence
+/// it is ordinary speech — launching Grok in the middle of a thought dumps you
+/// into a new session and wrecks the dictation. The phrase is removed from the
+/// inserted text only when it counted as a command, so "open Grok, now write me
+/// a haiku" opens Grok and types only the haiku.
 enum VoiceCommands {
 
     /// "open grok" / "open grok build", allowing for how speech-to-text actually
     /// hears the word — grock, grog, croc and friends all turn up in practice.
+    ///
+    /// Anchored to the start on purpose. Same reason the stop phrase is
+    /// end-only: the words are ordinary English once you are already talking.
     private static let openGrok: NSRegularExpression = {
         let word = "gro(?:k|ck|g|c)|crock|croc|grokk"
-        let pattern = "(?:^|\\s)(?:please\\s+)?(?:open|launch|start)\\s+(?:up\\s+)?(?:the\\s+)?"
+        let pattern = "^[\\s,.!?]*(?:please\\s+)?(?:open|launch|start)\\s+(?:up\\s+)?(?:the\\s+)?"
                     + "(?:\(word))(?:\\s+build)?\\b[\\s,.!?]*"
         return try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()

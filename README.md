@@ -52,17 +52,20 @@ The corner pill is clickable too, if you'd rather use the mouse for both ends. *
 edge** and it snaps flush and stays there — the panel then opens inward from that edge, so it
 never sweeps across your screen.
 
-### Say "open Grok" while you're talking
+### Say "open Grok" to start
 
-Say **"open Grok"** or **"open Grok Build"** mid-sentence and Quill opens a Grok Build session for
-you *without stopping the recording* — so you can carry straight on and have the rest become your
-prompt:
+Say **"open Grok"** or **"open Grok Build"** as the *first* thing in a dictation and Quill opens a
+Grok Build session *without stopping the recording* — so you can carry straight on and have the
+rest become your prompt:
 
 > "open Grok Build, then write me a haiku about rockets"
 
-…opens Grok and types only `then write me a haiku about rockets`. **The command phrase is always
-removed from the inserted text**, so it can never end up in a prompt. Speech-to-text mishearings
+…opens Grok and types only `then write me a haiku about rockets`. **The command phrase is
+removed from the inserted text**, so it never ends up in a prompt. Speech-to-text mishearings
 ("grog", "grock", "croc") are matched too.
+
+If you say it in the middle of a sentence — "I think we should open Grok and try that" — it is
+left alone. Those words stay in the transcript and nothing launches.
 
 It opens Ghostty if you have it, otherwise Terminal, using an ordinary new window running a normal
 login shell — the same thing as opening a terminal and typing `grok` yourself, so your theme,
