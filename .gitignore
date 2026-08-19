@@ -13,3 +13,9 @@ signing/quill.p12
 
 # Release artifacts
 dist/
+
+# Windows port (built on this Mac, runs only on Windows)
+windows/**/bin/
+windows/**/obj/
+windows/dist/
+windows/.vs/

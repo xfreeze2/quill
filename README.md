@@ -1,6 +1,6 @@
 # Quill
 
-**Speak anywhere on your Mac. The text lands where you point.**
+**Speak anywhere. The text lands where you point.**
 
 Tap a key, talk, then click into whatever window you want the words in. They appear there — at
 the end of what's already written, without touching your clipboard.
@@ -28,6 +28,16 @@ xattr -dr com.apple.quarantine ~/Applications/Quill.app && open ~/Applications/Q
 
 That last step is needed because Quill isn't notarised by Apple — macOS quarantines anything
 downloaded from the internet. See [Why the quarantine step](#why-the-quarantine-step).
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/xfreeze2/quill/main/windows/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\Quill` — no admin. Same tap-Control-and-talk behaviour as
+the Mac app, including "open Grok" into Windows Terminal. Details in
+[windows/README.md](windows/README.md).
 
 ## Use it
 
@@ -80,7 +90,7 @@ end the dictation. The rest of what you said still becomes the prompt when you p
 
 | | |
 |---|---|
-| **macOS 12 or newer** | Universal — Apple Silicon and Intel |
+| **macOS 12 or newer, or Windows 10 1809+ / Windows 11 (64-bit)** | Mac is universal (Apple Silicon and Intel). Windows is a self-contained `Quill.exe`. |
 | **A Grok subscription _or_ an xAI API key** | Quill uses the login the `grok` CLI already stores. No subscription? Add your own key from [console.x.ai](https://console.x.ai) and usage is billed to your account. |
 | **Microphone access** | Asked for on first use |
 | **Accessibility access** | So the trigger key works, and so Quill can type into other apps |
@@ -223,6 +233,14 @@ open -a Quill
 
 No Xcode project and no dependencies — `swiftc` against Cocoa and AVFoundation, assembled into a
 bundle by `build.sh`.
+
+Windows, cross-compiled from this repo (does not rebuild or restart the Mac app):
+
+```sh
+cd windows && ./build.sh
+```
+
+That produces `windows/dist/Quill-windows-x64.zip`. See [windows/README.md](windows/README.md).
 
 `install-identity.sh` creates a local self-signed certificate so the app's code identity stays
 stable between builds. That matters more than it sounds: with ad-hoc signing macOS treats every

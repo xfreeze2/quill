@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Quill</RootNamespace>
+    <AssemblyName>Quill.Core</AssemblyName>
+    <Description>Portable Quill logic shared by the Windows app. No Windows APIs.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Quill.Tests" />
+  </ItemGroup>
+</Project>
