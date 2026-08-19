@@ -49,11 +49,15 @@ sealed class QuillHost : IDisposable
         };
         _hud.OnMenu = ShowTrayMenu;
         _hud.ShowsIdlePill = _settings.CornerButton;
+        _inserter.Log = _log.Write;
     }
 
     public void Start()
     {
         _hud.Show();
+        _inserter.ClipboardOwner = _hud.NativeHandle;
+        _scheduler.Delay(TimeSpan.FromMilliseconds(400), () =>
+            _inserter.ClipboardOwner = _hud.NativeHandle);
         _hotkey.Trigger = _settings.Trigger;
         _hotkey.SingleTap = _settings.SingleTap;
         _hotkey.OnTrigger = () => Dispatcher.UIThread.Post(() => _session.Toggle());

@@ -40,6 +40,7 @@ sealed class HudWindow : Window, IHud
 
     public Action OnClick { get; set; } = () => { };
     public Action OnMenu { get; set; } = () => { };
+    public IntPtr NativeHandle => _hwnd != IntPtr.Zero ? _hwnd : TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
 
     public bool ShowsIdlePill { get; set; } = true;
 

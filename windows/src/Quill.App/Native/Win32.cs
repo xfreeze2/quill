@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Quill;
 
 namespace Quill.Win.Native;
 
@@ -97,26 +98,23 @@ static class Win32
         public UIntPtr dwExtraInfo;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct INPUT
-    {
-        public uint type;
-        public InputUnion U;
-    }
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, SendInputLayout.INPUT[] pInputs, int cbSize);
 
-    [StructLayout(LayoutKind.Explicit)]
-    public struct InputUnion
-    {
-        [FieldOffset(0)] public KEYBDINPUT ki;
-    }
+    [DllImport("user32.dll")]
+    public static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct KEYBDINPUT
-    {
-        public ushort wVk, wScan;
-        public uint dwFlags, time;
-        public UIntPtr dwExtraInfo;
-    }
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentProcessId();
+
+    public const uint WM_PASTE = 0x0302;
+    public const uint MAPVK_VK_TO_VSC = 0;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct WAVEFORMATEX
@@ -183,8 +181,7 @@ static class Win32
     [DllImport("user32.dll")]
     public static extern bool AllowSetForegroundWindow(int dwProcessId);
 
-    [DllImport("user32.dll")]
-    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
