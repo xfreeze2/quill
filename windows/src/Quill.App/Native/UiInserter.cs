@@ -9,7 +9,8 @@ sealed class UiInserter : IInserter
     public Action<string> Log { get; set; } = _ => { };
     public IntPtr ClipboardOwner { get; set; }
 
-    IntPtr _lastForeignHwnd;
+    IntPtr _targetHwnd;
+    bool _pinned;
 
     public bool IsTrusted => true;
 
@@ -24,22 +25,44 @@ sealed class UiInserter : IInserter
     public FrontApp Frontmost()
     {
         RememberForeignForeground();
-        return new(Win32.ForegroundTitle());
+        return new(TitleOf(Win32.GetForegroundWindow()) ?? Win32.ForegroundTitle());
+    }
+
+    public CapturedSelection? CaptureSelection()
+    {
+        _pinned = false;
+        _targetHwnd = IntPtr.Zero;
+        RememberForeignForeground();
+        return null;
+    }
+
+    public void NoteClick(double x, double y)
+    {
+        var hwnd = Win32.WindowFromPoint(new Win32.POINT { X = (int)x, Y = (int)y });
+        hwnd = FocusedEditOf(hwnd);
+        if (hwnd == IntPtr.Zero || IsOurs(hwnd)) return;
+        _targetHwnd = hwnd;
+        _pinned = true;
+        Log($"click target 0x{hwnd.ToInt64():X} class={ClassName(hwnd)}");
     }
 
     public void RememberForeignForeground()
     {
+        if (_pinned) return;
         var fg = Win32.GetForegroundWindow();
-        if (fg == IntPtr.Zero) return;
-        Win32.GetWindowThreadProcessId(fg, out var pid);
-        if (pid != 0 && pid != Win32.GetCurrentProcessId())
-            _lastForeignHwnd = fg;
+        if (fg == IntPtr.Zero || IsOurs(fg)) return;
+        var edit = FocusedEditOf(fg);
+        _targetHwnd = edit != IntPtr.Zero ? edit : fg;
     }
-
-    public CapturedSelection? CaptureSelection() => null;
 
     public string? FocusedFieldValue()
     {
+        var hwnd = ResolveTarget();
+        if (hwnd != IntPtr.Zero)
+        {
+            var viaMsg = ReadWindowText(hwnd);
+            if (!string.IsNullOrEmpty(viaMsg)) return viaMsg;
+        }
         if (Win32.UiaGetFocusedElement(out var node) != 0 || node == IntPtr.Zero) return null;
         try
         {
@@ -47,192 +70,213 @@ sealed class UiInserter : IInserter
                 return value as string;
             return null;
         }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            Win32.UiaNodeRelease(node);
-        }
+        catch { return null; }
+        finally { Win32.UiaNodeRelease(node); }
     }
 
     public string DescribeFocus()
     {
-        if (Win32.UiaGetFocusedElement(out var node) != 0 || node == IntPtr.Zero)
-            return "focused element: <none>";
-        try
-        {
-            Win32.UiaGetPropertyValue(node, Win32.UIA_NamePropertyId, out var name);
-            Win32.UiaGetPropertyValue(node, Win32.UIA_ValueValuePropertyId, out var value);
-            return $"name={name ?? "—"} valueReadable={value is string} sendInputSize={SendInputLayout.Size}";
-        }
-        catch
-        {
-            return "focused element: <error>";
-        }
-        finally
-        {
-            Win32.UiaNodeRelease(node);
-        }
+        var hwnd = ResolveTarget();
+        return $"hwnd=0x{hwnd.ToInt64():X} class={ClassName(hwnd)} ours={IsOurs(hwnd)} inputSize={SendInputLayout.Size}";
     }
 
     public void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
     {
         RememberForeignForeground();
-        RestoreTargetFocus();
+        var hwnd = ResolveTarget();
+        var app = TitleOf(RootOf(hwnd)) ?? Win32.ForegroundTitle();
+        var payload = Spacing.Apply(text, FocusedFieldValue(), atEnd ? FocusedFieldValue()?.Length : null);
 
-        var app = Frontmost().Name;
-        var payload = text;
-        var existing = FocusedFieldValue();
-        var offset = atEnd && existing is not null ? existing.Length : existing?.Length;
-        payload = Spacing.Apply(payload, existing, offset);
+        Log($"insert → {app ?? "?"} · {DescribeFocus()} · {payload.Length} chars");
 
-        Log($"insert → {app ?? "?"} · {DescribeFocus()} · inputSize={SendInputLayout.Size}");
-
-        if (TrySetValue(existing, payload, atEnd) && ConfirmLanded(payload))
+        if (hwnd == IntPtr.Zero || IsOurs(hwnd))
         {
-            Log("  → accessibility, confirmed");
-            done(new InsertOutcome(InsertMethod.Accessibility, app));
+            Log("  no foreign target window");
+            done(new InsertOutcome(InsertMethod.Blocked, app));
             return;
         }
 
-        if (InsertViaClipboard(payload))
+        ForceForeground(hwnd);
+        hwnd = FocusedEditOf(hwnd);
+        if (hwnd == IntPtr.Zero)
         {
-            Log("  → clipboard fallback (Ctrl+V posted)");
-            done(new InsertOutcome(InsertMethod.Clipboard, app));
+            Log("  lost hwnd after focus");
+            done(new InsertOutcome(InsertMethod.Blocked, app));
             return;
         }
 
+        var cls = ClassName(hwnd);
+        Log($"  focused class={cls} 0x{hwnd.ToInt64():X}");
+
+        if (IsEditClass(cls))
+        {
+            if (ReplaceSel(hwnd, payload) && ContainsText(hwnd, payload))
+            {
+                Log("  → EM_REPLACESEL, confirmed");
+                Finish(done, InsertMethod.Accessibility, app);
+                return;
+            }
+            var savedEdit = SnapshotClipboard();
+            if (SetClipboardText(payload))
+            {
+                Thread.Sleep(40);
+                Win32.SendMessage(hwnd, Win32.WM_PASTE, IntPtr.Zero, IntPtr.Zero);
+                Thread.Sleep(40);
+                if (ContainsText(hwnd, payload))
+                {
+                    Log("  → WM_PASTE, confirmed");
+                    RestoreClipboardLater(savedEdit);
+                    Finish(done, InsertMethod.Clipboard, app);
+                    return;
+                }
+            }
+            TypeChars(hwnd, payload);
+            Log("  → WM_CHAR to Edit");
+            RestoreClipboardLater(savedEdit);
+            Finish(done, InsertMethod.Clipboard, app);
+            return;
+        }
+
+        // Browsers, Electron, terminals: messages often go nowhere. Focus the
+        // window and type Unicode — not Ctrl+V, which is also our trigger key.
+        var saved = SnapshotClipboard();
+        ForceForeground(hwnd);
         if (TypeText(payload))
         {
-            Log("  → unicode fallback");
-            done(new InsertOutcome(InsertMethod.Clipboard, app));
+            Log("  → unicode SendInput");
+            RestoreClipboardLater(saved);
+            Finish(done, InsertMethod.Clipboard, app);
             return;
         }
-
-        Log("  → blocked — SendInput failed");
-        done(new InsertOutcome(InsertMethod.Blocked, app));
+        TypeChars(hwnd, payload);
+        Log("  → WM_CHAR fallback");
+        RestoreClipboardLater(saved);
+        Finish(done, InsertMethod.Clipboard, app);
     }
 
-    bool TrySetValue(string? existing, string payload, bool atEnd)
+    void Finish(Action<InsertOutcome> done, InsertMethod method, string? app)
     {
-        if (Win32.UiaGetFocusedElement(out var node) != 0 || node == IntPtr.Zero) return false;
+        _pinned = false;
+        done(new InsertOutcome(method, app));
+    }
+
+    IntPtr ResolveTarget()
+    {
+        if (_targetHwnd != IntPtr.Zero && Win32.IsWindow(_targetHwnd) && !IsOurs(_targetHwnd))
+            return _targetHwnd;
+        var fg = Win32.GetForegroundWindow();
+        if (fg != IntPtr.Zero && !IsOurs(fg)) return FocusedEditOf(fg);
+        return IntPtr.Zero;
+    }
+
+    static IntPtr RootOf(IntPtr hwnd) =>
+        hwnd == IntPtr.Zero ? IntPtr.Zero : Win32.GetAncestor(hwnd, Win32.GA_ROOT);
+
+    IntPtr FocusedEditOf(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+        Win32.GetWindowThreadProcessId(hwnd, out var pid);
+        if (pid == Win32.GetCurrentProcessId()) return IntPtr.Zero;
+        var tid = Win32.GetWindowThreadProcessId(hwnd, out _);
+        var info = new Win32.GUITHREADINFO { cbSize = Marshal.SizeOf<Win32.GUITHREADINFO>() };
+        if (Win32.GetGUIThreadInfo(tid, ref info))
+        {
+            if (info.hwndFocus != IntPtr.Zero && !IsOurs(info.hwndFocus)) return info.hwndFocus;
+            if (info.hwndCaret != IntPtr.Zero && !IsOurs(info.hwndCaret)) return info.hwndCaret;
+            if (info.hwndActive != IntPtr.Zero && !IsOurs(info.hwndActive)) return info.hwndActive;
+        }
+        return IsOurs(hwnd) ? IntPtr.Zero : hwnd;
+    }
+
+    void ForceForeground(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        var root = RootOf(hwnd);
+        if (root == IntPtr.Zero) root = hwnd;
+        var fg = Win32.GetForegroundWindow();
+        var fgThread = Win32.GetWindowThreadProcessId(fg, out _);
+        var targetThread = Win32.GetWindowThreadProcessId(root, out _);
+        var ourThread = Win32.GetCurrentThreadId();
+        Win32.AllowSetForegroundWindow(-1);
+        var a1 = fgThread != 0 && fgThread != ourThread && Win32.AttachThreadInput(ourThread, fgThread, true);
+        var a2 = targetThread != 0 && targetThread != ourThread && targetThread != fgThread
+            && Win32.AttachThreadInput(ourThread, targetThread, true);
         try
         {
-            if (Win32.UiaGetPatternProvider(node, Win32.UIA_ValuePatternId, out var unk) != 0 || unk is null)
-                return false;
-            IValueProvider? provider = null;
-            try { provider = unk as IValueProvider; } catch { /* QI failed */ }
-            if (provider is null)
-            {
-                try
-                {
-                    var punk = Marshal.GetIUnknownForObject(unk);
-                    provider = Marshal.GetTypedObjectForIUnknown(punk, typeof(IValueProvider)) as IValueProvider;
-                    Marshal.Release(punk);
-                }
-                catch { return false; }
-            }
-            if (provider is null) return false;
-            provider.get_IsReadOnly(out var readOnly);
-            if (readOnly) return false;
-            var next = atEnd && existing is not null ? existing + payload : payload;
-            provider.SetValue(next);
-            return true;
-        }
-        catch
-        {
-            return false;
+            Win32.ShowWindow(root, Win32.SW_RESTORE);
+            Win32.BringWindowToTop(root);
+            Win32.SetForegroundWindow(root);
         }
         finally
         {
-            Win32.UiaNodeRelease(node);
+            if (a2) Win32.AttachThreadInput(ourThread, targetThread, false);
+            if (a1) Win32.AttachThreadInput(ourThread, fgThread, false);
         }
+        Thread.Sleep(30);
     }
 
-    /// <summary>
-    /// Unlike Mac AX, Windows UIA often reports success and changes nothing.
-    /// An unreadable field is NOT confirmation — fall through to paste.
-    /// </summary>
-    bool ConfirmLanded(string payload)
+    static bool ReplaceSel(IntPtr hwnd, string text)
     {
-        var readback = FocusedFieldValue();
-        if (readback is null) return false;
+        Win32.SendMessage(hwnd, Win32.EM_REPLACESEL, (IntPtr)1, text);
+        return true;
+    }
+
+    static bool TypeChars(IntPtr hwnd, string text)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        foreach (var ch in text)
+            Win32.SendMessage(hwnd, Win32.WM_CHAR, (IntPtr)ch, IntPtr.Zero);
+        return true;
+    }
+
+    static bool ContainsText(IntPtr hwnd, string payload)
+    {
+        var got = ReadWindowText(hwnd);
+        if (string.IsNullOrEmpty(got)) return false;
         var needle = payload.Trim();
         if (needle.Length == 0) return true;
         var tail = needle.Length <= 24 ? needle : needle[^24..];
-        return readback.Contains(tail, StringComparison.Ordinal);
+        return got.Contains(tail, StringComparison.Ordinal);
     }
 
-    bool InsertViaClipboard(string text)
+    static string? ReadWindowText(IntPtr hwnd)
     {
-        var saved = SnapshotClipboard();
-        if (!SetClipboardText(text))
-        {
-            Log("  clipboard write failed");
-            return false;
-        }
-
-        // Give the clipboard a beat to publish. Stay on this thread so SendInput
-        // runs with a message pump — a threadpool SendInput is dropped.
-        Thread.Sleep(40);
-        RestoreTargetFocus();
-
-        var pasted = PasteChord() || PostPaste() || PasteViaKeybdEvent();
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(800).ConfigureAwait(false);
-            RestoreClipboard(saved);
-        });
-        return pasted;
+        if (hwnd == IntPtr.Zero) return null;
+        var len = Win32.SendMessage(hwnd, Win32.WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        if (len <= 0) return null;
+        var sb = new StringBuilder(len + 1);
+        Win32.SendMessage(hwnd, Win32.WM_GETTEXT, (IntPtr)sb.Capacity, sb);
+        return sb.Length == 0 ? null : sb.ToString();
     }
 
-    void RestoreTargetFocus()
+    static bool IsEditClass(string cls)
     {
-        var fg = Win32.GetForegroundWindow();
-        Win32.GetWindowThreadProcessId(fg, out var pid);
-        if (pid == Win32.GetCurrentProcessId() && _lastForeignHwnd != IntPtr.Zero)
-        {
-            Win32.AllowSetForegroundWindow(-1);
-            Win32.SetForegroundWindow(_lastForeignHwnd);
-            Thread.Sleep(30);
-        }
+        cls = cls.ToLowerInvariant();
+        return cls is "edit" || cls.Contains("richedit", StringComparison.Ordinal);
     }
 
-    bool PasteChord()
+    static bool IsOurs(IntPtr hwnd)
     {
-        var inputs = new[]
-        {
-            Vk(Win32.VK_LCONTROL, false),
-            Vk(Win32.VK_V, false),
-            Vk(Win32.VK_V, true),
-            Vk(Win32.VK_LCONTROL, true),
-        };
-        return Send(inputs);
-    }
-
-    bool PostPaste()
-    {
-        var hwnd = Win32.GetForegroundWindow();
         if (hwnd == IntPtr.Zero) return false;
-        return Win32.PostMessage(hwnd, Win32.WM_PASTE, IntPtr.Zero, IntPtr.Zero);
+        Win32.GetWindowThreadProcessId(hwnd, out var pid);
+        return pid == Win32.GetCurrentProcessId();
     }
 
-    bool PasteViaKeybdEvent()
+    static string ClassName(IntPtr hwnd)
     {
-        try
-        {
-            Win32.keybd_event((byte)Win32.VK_LCONTROL, 0, 0, UIntPtr.Zero);
-            Win32.keybd_event((byte)Win32.VK_V, 0, 0, UIntPtr.Zero);
-            Win32.keybd_event((byte)Win32.VK_V, 0, Win32.KEYEVENTF_KEYUP, UIntPtr.Zero);
-            Win32.keybd_event((byte)Win32.VK_LCONTROL, 0, Win32.KEYEVENTF_KEYUP, UIntPtr.Zero);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        if (hwnd == IntPtr.Zero) return "";
+        var sb = new StringBuilder(256);
+        Win32.GetClassName(hwnd, sb, sb.Capacity);
+        return sb.ToString();
+    }
+
+    static string? TitleOf(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return null;
+        var sb = new StringBuilder(512);
+        Win32.GetWindowText(hwnd, sb, sb.Capacity);
+        var t = sb.ToString();
+        return string.IsNullOrWhiteSpace(t) ? null : t;
     }
 
     public static bool TypeText(string text)
@@ -243,7 +287,7 @@ sealed class UiInserter : IInserter
             var down = SendInputLayout.Key(0, ch, up: false, unicode: true);
             var up = SendInputLayout.Key(0, ch, up: true, unicode: true);
             if (!Send([down, up])) ok = false;
-            Thread.Sleep(8);
+            Thread.Sleep(6);
         }
         return ok;
     }
@@ -286,10 +330,7 @@ sealed class UiInserter : IInserter
             try { return Marshal.PtrToStringUni(p); }
             finally { Win32.GlobalUnlock(h); }
         }
-        finally
-        {
-            Win32.CloseClipboard();
-        }
+        finally { Win32.CloseClipboard(); }
     }
 
     bool SetClipboardText(string text)
@@ -305,26 +346,19 @@ sealed class UiInserter : IInserter
             if (p == IntPtr.Zero) return false;
             Marshal.Copy(bytes, 0, p, bytes.Length);
             Win32.GlobalUnlock(h);
-            if (Win32.SetClipboardData(Win32.CF_UNICODETEXT, h) == IntPtr.Zero)
-                return false;
-            return true;
+            return Win32.SetClipboardData(Win32.CF_UNICODETEXT, h) != IntPtr.Zero;
         }
-        finally
-        {
-            Win32.CloseClipboard();
-        }
+        finally { Win32.CloseClipboard(); }
     }
 
-    static void RestoreClipboard(string? saved)
+    void RestoreClipboardLater(string? saved)
     {
         if (saved is null) return;
-        // Best-effort restore; ignore failure.
-        try
+        _ = Task.Run(async () =>
         {
-            var tmp = new UiInserter();
-            tmp.SetClipboardText(saved);
-        }
-        catch { /* ignore */ }
+            await Task.Delay(900).ConfigureAwait(false);
+            try { SetClipboardText(saved); } catch { /* ignore */ }
+        });
     }
 
     bool RetryOpenClipboard()
@@ -333,6 +367,7 @@ sealed class UiInserter : IInserter
         for (var i = 0; i < 12; i++)
         {
             if (Win32.OpenClipboard(owner)) return true;
+            if (owner != IntPtr.Zero && Win32.OpenClipboard(IntPtr.Zero)) return true;
             Thread.Sleep(20);
         }
         return false;

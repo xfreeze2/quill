@@ -54,6 +54,7 @@ sealed class HudWindow : Window, IHud
         ShowInTaskbar = false;
         Topmost = true;
         ShowActivated = false;
+        Focusable = false;
         Background = Brushes.Transparent;
         TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent };
         TransparencyBackgroundFallback = Brushes.Transparent;
@@ -210,7 +211,7 @@ sealed class HudWindow : Window, IHud
             Hide();
             return;
         }
-        Show();
+        if (!IsVisible) Show();
         Place(compact);
         ApplyNative(clickThrough: !compact);
         ApplyAlpha();

@@ -65,6 +65,7 @@ sealed class QuillHost : IDisposable
         _hotkey.OnClickAnywhere = (x, y) => Dispatcher.UIThread.Post(() =>
         {
             if (_session.DeliverToOpenedGrok) return;
+            _inserter.NoteClick(x, y);
             _session.HandleClickAnywhere(x, y);
         });
         _hotkey.OnFirstEvent = () => _log.Write("event tap is LIVE — first event delivered");

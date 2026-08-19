@@ -125,6 +125,9 @@ sealed class HotkeyHook : IDisposable
             }
             var msg = wParam.ToInt32();
             var info = Marshal.PtrToStructure<Win32.KBDLLHOOKSTRUCT>(lParam);
+            // Our own paste / type must not look like a Control tap.
+            if (SendInputLayout.IsInjected(info.flags))
+                return Win32.CallNextHookEx(_kbHook, nCode, wParam, lParam);
             var vk = info.vkCode;
             var isDown = msg is Win32.WM_KEYDOWN or Win32.WM_SYSKEYDOWN;
             var isUp = msg is Win32.WM_KEYUP or Win32.WM_SYSKEYUP;

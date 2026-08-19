@@ -16,7 +16,11 @@ public static class SendInputLayout
     public const uint KeyeventfScancode = 0x0008;
     public const uint KeyeventfExtended = 0x0001;
 
-    [StructLayout(LayoutKind.Sequential)]
+    public const uint LlkhfInjected = 0x00000010;
+
+    public static bool IsInjected(uint flags) => (flags & LlkhfInjected) != 0;
+
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public struct INPUT
     {
         public uint type;
@@ -30,7 +34,7 @@ public static class SendInputLayout
         [FieldOffset(0)] public KEYBDINPUT ki;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public struct MOUSEINPUT
     {
         public int dx;
@@ -41,7 +45,7 @@ public static class SendInputLayout
         public UIntPtr dwExtraInfo;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public struct KEYBDINPUT
     {
         public ushort wVk;

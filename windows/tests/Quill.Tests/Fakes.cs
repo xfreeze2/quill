@@ -110,6 +110,7 @@ sealed class FakeInserter : IInserter
     public CapturedSelection? CaptureSelection() => Selection;
     public string? FocusedFieldValue() => Field;
     public string DescribeFocus() => "role=edit";
+    public void NoteClick(double x, double y) { }
     public void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
     {
         Inserts.Add((text, atEnd, selection));

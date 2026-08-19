@@ -114,7 +114,59 @@ static class Win32
     public static extern uint GetCurrentProcessId();
 
     public const uint WM_PASTE = 0x0302;
+    public const uint WM_CHAR = 0x0102;
+    public const uint WM_GETTEXT = 0x000D;
+    public const uint WM_GETTEXTLENGTH = 0x000E;
+    public const uint EM_REPLACESEL = 0x00C2;
     public const uint MAPVK_VK_TO_VSC = 0;
+    public const int SW_SHOWNOACTIVATE = 4;
+    public const int SW_RESTORE = 9;
+    public const uint GA_ROOT = 2;
+    public const int HWND_TOP = 0;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct GUITHREADINFO
+    {
+        public int cbSize;
+        public int flags;
+        public IntPtr hwndActive;
+        public IntPtr hwndFocus;
+        public IntPtr hwndCapture;
+        public IntPtr hwndMenuOwner;
+        public IntPtr hwndMoveSize;
+        public IntPtr hwndCaret;
+        public RECT rcCaret;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr WindowFromPoint(POINT pt);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO pgui);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, System.Text.StringBuilder lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct WAVEFORMATEX
@@ -327,6 +379,7 @@ static class Win32
         else style &= ~WS_EX_TRANSPARENT;
         SetWindowLong(hwnd, GWL_EXSTYLE, (IntPtr)style);
         SetWindowPos(hwnd, (IntPtr)HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
 
     public static string? ForegroundTitle()

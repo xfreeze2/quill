@@ -59,6 +59,7 @@ public interface IInserter
     CapturedSelection? CaptureSelection();
     string? FocusedFieldValue();
     string DescribeFocus();
+    void NoteClick(double x, double y);
     void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done);
 }
 
