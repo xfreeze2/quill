@@ -45,7 +45,29 @@ sealed class UiScheduler : IScheduler
 
 sealed class WindowsMic : IMic
 {
-    public bool IsAuthorized
+    const string ConsentKey =
+        @"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
+
+    public bool IsAuthorized => PrivacyAllows && DeviceExists;
+
+    /// <summary>
+    /// Windows Settings ▸ Privacy ▸ Microphone. A WinMM open "succeeds" even
+    /// when access is denied there — it just records silence — so the consent
+    /// store is the only honest signal. Absent keys count as allowed.
+    /// </summary>
+    static bool PrivacyAllows
+    {
+        get
+        {
+            var global = Native.Win32.ReadUserRegistryString(ConsentKey, "Value");
+            if (string.Equals(global, "Deny", StringComparison.OrdinalIgnoreCase)) return false;
+            var desktop = Native.Win32.ReadUserRegistryString(ConsentKey + @"\NonPackaged", "Value");
+            if (string.Equals(desktop, "Deny", StringComparison.OrdinalIgnoreCase)) return false;
+            return true;
+        }
+    }
+
+    static bool DeviceExists
     {
         get
         {
