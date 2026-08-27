@@ -57,21 +57,19 @@ sealed class UiInserter : IInserter
 
     public string? FocusedFieldValue()
     {
-        var hwnd = ResolveTarget();
-        if (hwnd != IntPtr.Zero)
-        {
-            var viaMsg = ReadWindowText(hwnd);
-            if (!string.IsNullOrEmpty(viaMsg)) return viaMsg;
-        }
-        if (Win32.UiaGetFocusedElement(out var node) != 0 || node == IntPtr.Zero) return null;
+        // WM_GETTEXT covers classic Edit/RichEdit fields. Browsers, Electron
+        // and UWP text boxes expose nothing this way — they return null, and
+        // the insert path falls back to typing, exactly like the Mac app does
+        // for web views and terminals.
         try
         {
-            if (Win32.UiaGetPropertyValue(node, Win32.UIA_ValueValuePropertyId, out var value) == 0)
-                return value as string;
+            var hwnd = ResolveTarget();
+            return hwnd == IntPtr.Zero ? null : ReadWindowText(hwnd);
+        }
+        catch
+        {
             return null;
         }
-        catch { return null; }
-        finally { Win32.UiaNodeRelease(node); }
     }
 
     public string DescribeFocus()
@@ -81,6 +79,20 @@ sealed class UiInserter : IInserter
     }
 
     public void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
+    {
+        // A failure to insert must never take the app down — report Blocked.
+        try
+        {
+            InsertCore(text, atEnd, selection, done);
+        }
+        catch (Exception ex)
+        {
+            Log("insert failed — " + ex.Message);
+            done(new InsertOutcome(InsertMethod.Blocked, null));
+        }
+    }
+
+    void InsertCore(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
     {
         RememberForeignForeground();
         var hwnd = ResolveTarget();
@@ -120,7 +132,8 @@ sealed class UiInserter : IInserter
             if (SetClipboardText(payload))
             {
                 Thread.Sleep(40);
-                Win32.SendMessage(hwnd, Win32.WM_PASTE, IntPtr.Zero, IntPtr.Zero);
+                Win32.SendMessageTimeout(hwnd, Win32.WM_PASTE, IntPtr.Zero, IntPtr.Zero,
+                    Win32.SMTO_ABORTIFHUNG, 800, out _);
                 Thread.Sleep(40);
                 if (ContainsText(hwnd, payload))
                 {
@@ -217,15 +230,19 @@ sealed class UiInserter : IInserter
 
     static bool ReplaceSel(IntPtr hwnd, string text)
     {
-        Win32.SendMessage(hwnd, Win32.EM_REPLACESEL, (IntPtr)1, text);
-        return true;
+        return Win32.SendMessageTimeout(hwnd, Win32.EM_REPLACESEL, (IntPtr)1, text,
+            Win32.SMTO_ABORTIFHUNG, 800, out _) != IntPtr.Zero;
     }
 
     static bool TypeChars(IntPtr hwnd, string text)
     {
         if (hwnd == IntPtr.Zero) return false;
         foreach (var ch in text)
-            Win32.SendMessage(hwnd, Win32.WM_CHAR, (IntPtr)ch, IntPtr.Zero);
+        {
+            if (Win32.SendMessageTimeout(hwnd, Win32.WM_CHAR, (IntPtr)ch, IntPtr.Zero,
+                    Win32.SMTO_ABORTIFHUNG, 200, out _) == IntPtr.Zero)
+                return false;
+        }
         return true;
     }
 
@@ -241,11 +258,17 @@ sealed class UiInserter : IInserter
 
     static string? ReadWindowText(IntPtr hwnd)
     {
+        // SendMessageTimeout so an unresponsive target can never freeze Quill.
         if (hwnd == IntPtr.Zero) return null;
-        var len = Win32.SendMessage(hwnd, Win32.WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        if (Win32.SendMessageTimeout(hwnd, Win32.WM_GETTEXTLENGTH, IntPtr.Zero, IntPtr.Zero,
+                Win32.SMTO_ABORTIFHUNG, 200, out var lenResult) == IntPtr.Zero)
+            return null;
+        var len = (int)lenResult.ToUInt32();
         if (len <= 0) return null;
         var sb = new StringBuilder(len + 1);
-        Win32.SendMessage(hwnd, Win32.WM_GETTEXT, (IntPtr)sb.Capacity, sb);
+        if (Win32.SendMessageTimeout(hwnd, Win32.WM_GETTEXT, (IntPtr)sb.Capacity, sb,
+                Win32.SMTO_ABORTIFHUNG, 400, out _) == IntPtr.Zero)
+            return null;
         return sb.Length == 0 ? null : sb.ToString();
     }
 
