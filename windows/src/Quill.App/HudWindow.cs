@@ -266,8 +266,12 @@ sealed class HudWindow : Window, IHud
 
     public bool ContainsPoint(double x, double y)
     {
+        // x/y arrive from the low-level mouse hook in physical pixels;
+        // Bounds is in DIPs, so scale it before comparing.
         if (!IsVisible) return false;
-        var r = new Rect(Position.X - 6, Position.Y - 6, Bounds.Width + 12, Bounds.Height + 12);
+        var scale = RenderScaling;
+        var r = new Rect(Position.X - 6, Position.Y - 6,
+            Bounds.Width * scale + 12, Bounds.Height * scale + 12);
         return r.Contains(new Point(x, y));
     }
 
@@ -286,18 +290,26 @@ sealed class HudWindow : Window, IHud
 
     void Place(bool compact)
     {
-        var screen = Screens.Primary ?? Screens.All.FirstOrDefault();
+        // Stay on whichever monitor the pill was dragged to.
+        var screen = (IsVisible ? Screens.ScreenFromWindow(this) : null)
+            ?? Screens.Primary ?? Screens.All.FirstOrDefault();
         if (screen is null) return;
-        var area = screen.WorkingArea;
+        var area = screen.WorkingArea; // physical pixels
         var w = compact ? Compact : ExpandedW;
         var h = compact ? Compact : ExpandedH;
         Width = w;
         Height = h;
+        // Width/Height are DIPs; position maths needs physical pixels.
+        var scale = screen.Scaling;
+        var wPx = w * scale;
+        var hPx = h * scale;
         var edge = _settings.HudEdge == "left" ? "left" : "right";
         var offset = Math.Clamp(_settings.HudEdgeOffset, 0.04, 0.96);
-        var x = edge == "left" ? area.X + EdgeMargin : area.X + area.Width - w - EdgeMargin;
+        var x = edge == "left"
+            ? area.X + EdgeMargin * scale
+            : area.X + area.Width - wPx - EdgeMargin * scale;
         var centreY = area.Y + offset * area.Height;
-        var y = Math.Clamp(centreY - h / 2, area.Y + 6, area.Y + area.Height - h - 6);
+        var y = Math.Clamp(centreY - hPx / 2, area.Y + 6, area.Y + area.Height - hPx - 6);
         Position = new PixelPoint((int)x, (int)y);
     }
 
@@ -352,12 +364,12 @@ sealed class HudWindow : Window, IHud
         var now = e.GetPosition(this);
         if (!_didDrag && Math.Abs(now.X - origin.X) + Math.Abs(now.Y - origin.Y) < 3) return;
         _didDrag = true;
-        var screen = e.GetPosition(null);
-        // GetPosition(null) is window-relative in Avalonia; use pointer screen point.
+        // Pointer positions are DIPs; Position is physical pixels.
         var p = e.GetPosition(this);
+        var scale = RenderScaling;
         Position = new PixelPoint(
-            Position.X + (int)(p.X - origin.X),
-            Position.Y + (int)(p.Y - origin.Y));
+            Position.X + (int)((p.X - origin.X) * scale),
+            Position.Y + (int)((p.Y - origin.Y) * scale));
     }
 
     void OnReleased(object? sender, PointerReleasedEventArgs e)
@@ -385,8 +397,9 @@ sealed class HudWindow : Window, IHud
         var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
         if (screen is null) return;
         var area = screen.WorkingArea;
-        var centreX = Position.X + Bounds.Width / 2;
-        var centreY = Position.Y + Bounds.Height / 2;
+        var scale = screen.Scaling;
+        var centreX = Position.X + Bounds.Width * scale / 2;
+        var centreY = Position.Y + Bounds.Height * scale / 2;
         _settings.HudEdge = (centreX - area.X) < (area.X + area.Width - centreX) ? "left" : "right";
         _settings.HudEdgeOffset = Math.Clamp((centreY - area.Y) / Math.Max(area.Height, 1), 0.04, 0.96);
         Place(true);
