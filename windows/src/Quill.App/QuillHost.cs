@@ -214,6 +214,11 @@ sealed class QuillHost : IDisposable
                     $"Idle pill hidden. {TriggerInfo.Gesture(_settings.Trigger, _settings.SingleTap)} still works; the tray icon brings it back."));
                 _hud.CollapseAfter(TimeSpan.FromSeconds(6));
             }
+            else
+            {
+                // Bring the pill straight back; nothing else repaints it.
+                _hud.Apply(new HudState(HudStateKind.Idle));
+            }
             RebuildTray();
         }));
         appearance.Items.Add(new NativeMenuItem("Reset panel position")

@@ -22,10 +22,34 @@ static class Program
             return HeadlessUpdateCheck.Run(force: check == "force").GetAwaiter().GetResult();
         }
 
-        AppBuilder.Configure<App>()
-            .UsePlatformDetect()
-            .LogToTrace()
-            .StartWithClassicDesktopLifetime(args);
+        // One Quill only: a second copy would install a second keyboard hook
+        // and insert everything twice.
+        using var single = new Mutex(true, @"Local\com.freeze.quill.single-instance", out var isFirst);
+        if (!isFirst) return 0;
+
+        // Any crash leaves a trace in %LOCALAPPDATA%\Quill\Quill.log instead
+        // of the app just vanishing.
+        var crashLog = new Quill.Log(Quill.Log.DefaultPath);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            crashLog.Write("FATAL: " + e.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            crashLog.Write("unobserved task exception: " + e.Exception);
+            e.SetObserved();
+        };
+
+        try
+        {
+            AppBuilder.Configure<App>()
+                .UsePlatformDetect()
+                .LogToTrace()
+                .StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception ex)
+        {
+            crashLog.Write("FATAL: " + ex);
+            throw;
+        }
         return 0;
     }
 }
