@@ -143,8 +143,11 @@ public sealed class DictationController : IDisposable
 
         var client = _sttFactory();
         _stt = client;
-        _pendingPcm.Clear();
-        _socketReady = false;
+        lock (_pendingPcm)
+        {
+            _pendingPcm.Clear();
+            _socketReady = false;
+        }
         _sawAnyText = false;
         _stopReason = StopReason.Hotkey;
         _didRunVoiceCommand = false;
@@ -152,15 +155,21 @@ public sealed class DictationController : IDisposable
         _lastStopCandidate = null;
         client.Log = _log.Write;
 
+        // The socket callbacks arrive on background threads. Everything that
+        // touches session state is marshalled to the scheduler thread, and a
+        // stale client (from a session that already ended) is ignored.
         client.OnReady = () =>
         {
-            _socketReady = true;
-            foreach (var chunk in _pendingPcm) client.SendPcm(chunk);
-            _pendingPcm.Clear();
+            lock (_pendingPcm)
+            {
+                _socketReady = true;
+                foreach (var chunk in _pendingPcm) client.SendPcm(chunk);
+                _pendingPcm.Clear();
+            }
         };
-        client.OnText = text =>
+        client.OnText = text => _scheduler.Post(() =>
         {
-            if (string.IsNullOrEmpty(text)) return;
+            if (_stt != client || string.IsNullOrEmpty(text)) return;
             _sawAnyText = true;
             if (!_didRunVoiceCommand && VoiceCommands.ContainsOpenGrok(text))
             {
@@ -174,9 +183,15 @@ public sealed class DictationController : IDisposable
                 NoteVoiceActivity();
             }
             _hud.UpdateText(VoiceCommands.StripAll(text));
-        };
-        client.OnComplete = text => FinishSession(text);
-        client.OnFailure = failure => AbortSession(failure.Message);
+        });
+        client.OnComplete = text => _scheduler.Post(() =>
+        {
+            if (_stt == client) FinishSession(text);
+        });
+        client.OnFailure = failure => _scheduler.Post(() =>
+        {
+            if (_stt == client) AbortSession(failure.Message);
+        });
 
         if (_settings.Polish)
             _ = Polisher.WarmAsync(creds.Token);
@@ -185,8 +200,13 @@ public sealed class DictationController : IDisposable
 
         _recorder.OnPcm = data =>
         {
-            if (_socketReady) client.SendPcm(data);
-            else if (_pendingPcm.Count < 200) _pendingPcm.Add(data);
+            // Called on the audio driver's thread; the lock keeps buffered
+            // chunks and live chunks in order around the socket-open moment.
+            lock (_pendingPcm)
+            {
+                if (_socketReady) client.SendPcm(data);
+                else if (_pendingPcm.Count < 200) _pendingPcm.Add(data);
+            }
         };
         _recorder.OnLevel = level =>
         {
@@ -277,8 +297,11 @@ public sealed class DictationController : IDisposable
             }
             var end = Math.Min(offset + chunk, pcm.Length);
             var slice = pcm[offset..end];
-            if (_socketReady) client.SendPcm(slice);
-            else _pendingPcm.Add(slice);
+            lock (_pendingPcm)
+            {
+                if (_socketReady) client.SendPcm(slice);
+                else _pendingPcm.Add(slice);
+            }
             offset = end;
         });
     }

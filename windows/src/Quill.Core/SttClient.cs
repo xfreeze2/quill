@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace Quill;
 
@@ -17,9 +18,19 @@ public sealed record SttFailure(SttFailureKind Kind, string Message);
 public sealed class SttClient : IAsyncDisposable
 {
     readonly TranscriptAssembler _assembler = new();
+
+    // ClientWebSocket allows a single outstanding SendAsync. Audio arrives on
+    // the recorder's driver thread, so every send is queued here and written
+    // by one loop — overlapping SendAsync calls would throw, and an exception
+    // on the driver thread kills the process.
+    readonly Channel<(ReadOnlyMemory<byte> payload, WebSocketMessageType type)> _sends =
+        Channel.CreateUnbounded<(ReadOnlyMemory<byte>, WebSocketMessageType)>(
+            new UnboundedChannelOptions { SingleReader = true });
+
     ClientWebSocket? _socket;
     CancellationTokenSource? _cts;
     Task? _receive;
+    Task? _sendLoop;
     int _didFinish;
     int _socketOpen;
     int _finishRequested;
@@ -56,6 +67,7 @@ public sealed class SttClient : IAsyncDisposable
         }
 
         Volatile.Write(ref _socketOpen, 1);
+        _sendLoop = SendLoop();
         OnReady();
         if (Volatile.Read(ref _finishRequested) == 1)
             _ = SendDoneAsync();
@@ -65,9 +77,31 @@ public sealed class SttClient : IAsyncDisposable
 
     public void SendPcm(ReadOnlyMemory<byte> pcm)
     {
-        var socket = _socket;
-        if (socket is not { State: WebSocketState.Open }) return;
-        _ = socket.SendAsync(pcm, WebSocketMessageType.Binary, true, CancellationToken.None);
+        _sends.Writer.TryWrite((pcm, WebSocketMessageType.Binary));
+    }
+
+    async Task SendLoop()
+    {
+        try
+        {
+            await foreach (var (payload, type) in _sends.Reader.ReadAllAsync().ConfigureAwait(false))
+            {
+                var socket = _socket;
+                if (socket is not { State: WebSocketState.Open }) continue;
+                try
+                {
+                    await socket.SendAsync(payload, type, true, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Transport failures surface through the receive loop.
+                }
+            }
+        }
+        catch
+        {
+            // Channel completed — nothing more to send.
+        }
     }
 
     public void Finish()
@@ -87,26 +121,16 @@ public sealed class SttClient : IAsyncDisposable
     public void Cancel()
     {
         if (Interlocked.Exchange(ref _didFinish, 1) == 1) return;
+        _sends.Writer.TryComplete();
         try { _cts?.Cancel(); } catch { /* ignore */ }
         try { _socket?.Abort(); } catch { /* ignore */ }
     }
 
     async Task SendDoneAsync()
     {
-        try
-        {
-            var socket = _socket;
-            if (socket is { State: WebSocketState.Open })
-            {
-                var payload = Encoding.UTF8.GetBytes("""{"type":"audio.done"}""");
-                await socket.SendAsync(payload, WebSocketMessageType.Text, true, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-        }
-        catch
-        {
-            // complete() below still fires on the timeout.
-        }
+        // Queued after any PCM still in flight, so no audio is cut off.
+        var payload = Encoding.UTF8.GetBytes("""{"type":"audio.done"}""");
+        _sends.Writer.TryWrite((payload, WebSocketMessageType.Text));
 
         try
         {
@@ -195,6 +219,7 @@ public sealed class SttClient : IAsyncDisposable
     void Complete()
     {
         if (Interlocked.Exchange(ref _didFinish, 1) == 1) return;
+        _sends.Writer.TryComplete();
         var text = _assembler.Transcript;
         try { _socket?.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None); }
         catch { /* ignore */ }
@@ -225,6 +250,7 @@ public sealed class SttClient : IAsyncDisposable
     void Fail(SttFailure failure)
     {
         if (Interlocked.Exchange(ref _didFinish, 1) == 1) return;
+        _sends.Writer.TryComplete();
         OnFailure(failure);
     }
 
@@ -234,6 +260,10 @@ public sealed class SttClient : IAsyncDisposable
         if (_receive is not null)
         {
             try { await _receive.ConfigureAwait(false); } catch { /* ignore */ }
+        }
+        if (_sendLoop is not null)
+        {
+            try { await _sendLoop.ConfigureAwait(false); } catch { /* ignore */ }
         }
         _socket?.Dispose();
         _cts?.Dispose();
