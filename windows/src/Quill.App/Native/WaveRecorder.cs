@@ -112,22 +112,32 @@ sealed class WaveRecorder : IRecorder
 
     void Callback(IntPtr hwi, uint uMsg, IntPtr dwInstance, IntPtr dwParam1, IntPtr dwParam2)
     {
-        if (uMsg != Win32.WIM_DATA || !_running) return;
-        var hdr = Marshal.PtrToStructure<Win32.WAVEHDR>(dwParam1);
-        var n = (int)hdr.dwBytesRecorded;
-        if (n > 0)
+        // Runs on winmm's driver thread. An exception escaping a native
+        // callback takes the whole process down, so nothing may throw here.
+        try
         {
-            var raw = new byte[n];
-            Marshal.Copy(hdr.lpData, raw, 0, n);
-            Observe(raw);
-            var pcm = _sourceRate == TargetRate ? raw : Resample(raw, _sourceRate, TargetRate);
-            if (pcm.Length > 0) OnPcm(pcm);
+            if (uMsg != Win32.WIM_DATA || !_running) return;
+            var hdr = Marshal.PtrToStructure<Win32.WAVEHDR>(dwParam1);
+            var n = (int)hdr.dwBytesRecorded;
+            if (n > 0)
+            {
+                var raw = new byte[n];
+                Marshal.Copy(hdr.lpData, raw, 0, n);
+                Observe(raw);
+                var pcm = _sourceRate == TargetRate ? raw : Resample(raw, _sourceRate, TargetRate);
+                if (pcm.Length > 0) OnPcm(pcm);
+            }
+            if (_running && _handle != IntPtr.Zero)
+            {
+                hdr.dwBytesRecorded = 0;
+                hdr.dwFlags &= ~Win32.WHDR_DONE;
+                Marshal.StructureToPtr(hdr, dwParam1, false);
+                Win32.waveInAddBuffer(_handle, dwParam1, Marshal.SizeOf<Win32.WAVEHDR>());
+            }
         }
-        if (_running && _handle != IntPtr.Zero)
+        catch
         {
-            hdr.dwBytesRecorded = 0;
-            Marshal.StructureToPtr(hdr, dwParam1, false);
-            Win32.waveInAddBuffer(_handle, dwParam1, Marshal.SizeOf<Win32.WAVEHDR>());
+            // Drop the buffer rather than crash mid-recording.
         }
     }
 

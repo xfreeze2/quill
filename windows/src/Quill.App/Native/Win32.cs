@@ -63,11 +63,6 @@ static class Win32
     public const uint CF_UNICODETEXT = 13;
     public const uint GMEM_MOVEABLE = 0x0002;
 
-    public const int UIA_ValuePatternId = 10002;
-    public const int UIA_TextPatternId = 10014;
-    public const int UIA_ValueValuePropertyId = 30045;
-    public const int UIA_NamePropertyId = 30005;
-
     public const uint WAVE_MAPPER = 0xFFFFFFFF;
     public const ushort WAVE_FORMAT_PCM = 1;
     public const uint CALLBACK_FUNCTION = 0x00030000;
@@ -159,6 +154,17 @@ static class Win32
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, System.Text.StringBuilder lParam);
 
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, System.Text.StringBuilder lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);
 
@@ -176,11 +182,17 @@ static class Win32
         public ushort nBlockAlign, wBitsPerSample, cbSize;
     }
 
+    // dwUser and reserved are DWORD_PTR — pointer-sized on x64. Declaring them
+    // as uint shifts dwFlags/dwLoops by 4 bytes, so writing the struct back
+    // wipes WHDR_PREPARED in the native header and waveInAddBuffer rejects the
+    // buffer: recording then stops silently after the first few buffers.
     [StructLayout(LayoutKind.Sequential)]
     public struct WAVEHDR
     {
         public IntPtr lpData;
-        public uint dwBufferLength, dwBytesRecorded, dwUser, dwFlags, dwLoops;
+        public uint dwBufferLength, dwBytesRecorded;
+        public UIntPtr dwUser;
+        public uint dwFlags, dwLoops;
         public IntPtr lpNext;
         public UIntPtr reserved;
     }
@@ -341,18 +353,6 @@ static class Win32
         public ushort wChannels, wReserved1;
     }
 
-    [DllImport("UIAutomationCore.dll")]
-    public static extern int UiaGetFocusedElement(out IntPtr phnode);
-
-    [DllImport("UIAutomationCore.dll")]
-    public static extern bool UiaNodeRelease(IntPtr hnode);
-
-    [DllImport("UIAutomationCore.dll")]
-    public static extern int UiaGetPropertyValue(IntPtr hnode, int propertyId, out object pValue);
-
-    [DllImport("UIAutomationCore.dll")]
-    public static extern int UiaGetPatternProvider(IntPtr hnode, int patternId, [MarshalAs(UnmanagedType.IUnknown)] out object? p);
-
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern bool CredWrite(ref CREDENTIAL credential, uint flags);
 
@@ -367,6 +367,30 @@ static class Win32
 
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
+
+    static readonly IntPtr HKEY_CURRENT_USER = new(unchecked((int)0x80000001));
+    const uint RRF_RT_REG_SZ = 0x00000002;
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern int RegGetValue(IntPtr hkey, string lpSubKey, string? lpValue, uint dwFlags, out uint pdwType, byte[] pvData, ref uint pcbData);
+
+    /// <summary>Reads a REG_SZ under HKCU, or null if absent/unreadable.</summary>
+    public static string? ReadUserRegistryString(string subKey, string valueName)
+    {
+        try
+        {
+            var data = new byte[512];
+            var size = (uint)data.Length;
+            if (RegGetValue(HKEY_CURRENT_USER, subKey, valueName, RRF_RT_REG_SZ, out _, data, ref size) != 0)
+                return null;
+            var s = System.Text.Encoding.Unicode.GetString(data, 0, (int)size).TrimEnd('\0');
+            return s.Length == 0 ? null : s;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     [DllImport("user32.dll")]
     public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
@@ -402,12 +426,3 @@ static class Win32
     }
 }
 
-[ComImport]
-[Guid("c7935180-6fb3-4201-b174-7df73adbf64a")]
-[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IValueProvider
-{
-    void SetValue([MarshalAs(UnmanagedType.LPWStr)] string val);
-    void get_Value([MarshalAs(UnmanagedType.BStr)] out string val);
-    void get_IsReadOnly(out bool isReadOnly);
-}
