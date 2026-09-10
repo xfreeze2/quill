@@ -232,6 +232,12 @@ enum Inserter {
         // Whatever we could not move stays where the user left it, so judge the
         // boundary by the actual insertion point rather than assuming the end.
         let boundaryOffset = landingAtEnd ? existing?.utf16.count : (caretBefore ?? existing?.utf16.count)
+
+        // Landing mid-sentence? The transcript arrives with its first word
+        // capitalised — the service treats every dictation as its own sentence —
+        // so drop that capital when we are continuing existing text.
+        payload = TextTidy.applyContinuationCase(payload, existing: existing, at: boundaryOffset)
+
         // Both sides matter. Text dropped at the caret has something after it as
         // well as before, and only padding the front still runs it into whatever
         // follows.
