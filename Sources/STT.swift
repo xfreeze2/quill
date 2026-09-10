@@ -36,8 +36,15 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
     private var segments: [Double: String] = [:]
     private var didFinish = false
     private var doneTimer: Timer?
+    private var connectTimer: Timer?
     private var socketOpen = false
     private var finishRequested = false
+
+    /// How long to wait for a still-connecting socket to open after the user has
+    /// asked to finish, before giving up. Without this the session sat on
+    /// "Transcribing" until the 20s URL timeout whenever the server was
+    /// unreachable — which read as the app hanging.
+    private let connectGrace: TimeInterval = 5.0
 
     /// Best transcript so far — fires on every partial.
     var onText: (String) -> Void = { _ in }
@@ -104,6 +111,18 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
         } else {
             Log.write("  finish deferred — socket still connecting, audio held")
             finishRequested = true
+            // Bound the wait. If the socket never opens, complete gracefully with
+            // whatever we have (usually nothing) instead of hanging — the caller
+            // then shows a real "couldn't reach speech-to-text" message.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.connectTimer?.invalidate()
+                self.connectTimer = Timer.scheduledTimer(withTimeInterval: self.connectGrace, repeats: false) { [weak self] _ in
+                    guard let self, !self.didFinish, !self.socketOpen else { return }
+                    Log.write("  finish timed out — socket never opened after \(self.connectGrace)s")
+                    self.complete()
+                }
+            }
         }
     }
 
@@ -121,6 +140,7 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
     func cancel() {
         didFinish = true
         doneTimer?.invalidate()
+        connectTimer?.invalidate()
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         session?.invalidateAndCancel()
@@ -130,6 +150,7 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
         guard !didFinish else { return }
         didFinish = true
         doneTimer?.invalidate()
+        connectTimer?.invalidate()
         let text = transcript
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
@@ -221,6 +242,11 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
                     didOpenWithProtocol protocol: String?) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.connectTimer?.invalidate()
+            self.connectTimer = nil
+            // The grace timer may have already completed the session; if so, a
+            // late open is nothing to act on.
+            guard !self.didFinish else { return }
             self.socketOpen = true
             self.onReady()                       // flushes whatever was buffered
             if self.finishRequested { self.sendDone() }
