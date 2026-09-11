@@ -78,6 +78,7 @@ public static class SettingKeys
     public const string NotifiedUpdateVersion = "notifiedUpdateVersion";
     public const string HudEdge = "hudEdge";
     public const string HudEdgeOffset = "hudEdgeOffset";
+    public const string HudScreen = "hudScreen";
 }
 
 public sealed class Settings
@@ -102,6 +103,13 @@ public sealed class Settings
     public Trigger Trigger { get => TriggerInfo.Parse(_store.GetString(SettingKeys.Trigger, "control")); set => _store.SetString(SettingKeys.Trigger, TriggerInfo.WireName(value)); }
     public string HudEdge { get => _store.GetString(SettingKeys.HudEdge, "right"); set => _store.SetString(SettingKeys.HudEdge, value); }
     public double HudEdgeOffset { get => _store.GetDouble(SettingKeys.HudEdgeOffset, 0.82); set => _store.SetDouble(SettingKeys.HudEdgeOffset, value); }
+
+    /// <summary>The display the pill was last dropped on, or "" when never dragged.</summary>
+    public string HudScreen
+    {
+        get => _store.GetString(SettingKeys.HudScreen, "");
+        set { if (value.Length == 0) _store.Remove(SettingKeys.HudScreen); else _store.SetString(SettingKeys.HudScreen, value); }
+    }
 
     public IReadOnlyList<string> History => _store.GetStringList(SettingKeys.History);
 
