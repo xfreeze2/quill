@@ -480,7 +480,7 @@ public sealed class DictationController : IDisposable
             if (_deliverToOpenedGrok) _grok.BringToFront();
             var selection = _capturedSelection;
             _capturedSelection = null;
-            _inserter.Insert(trimmed, _settings.InsertAtEnd, selection, outcome =>
+            _inserter.Insert(trimmed, _settings.InsertAtEnd, selection, _settings.Language, outcome =>
             {
                 switch (outcome.Method)
                 {

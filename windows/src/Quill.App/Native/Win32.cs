@@ -113,6 +113,8 @@ static class Win32
     public const uint WM_GETTEXT = 0x000D;
     public const uint WM_GETTEXTLENGTH = 0x000E;
     public const uint EM_REPLACESEL = 0x00C2;
+    public const uint EM_GETSEL = 0x00B0;
+    public const uint EM_SETSEL = 0x00B1;
     public const uint MAPVK_VK_TO_VSC = 0;
     public const int SW_SHOWNOACTIVATE = 4;
     public const int SW_RESTORE = 9;
@@ -164,6 +166,10 @@ static class Win32
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+    // EM_GETSEL: both parameters are pointers the edit control writes into.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, ref uint wParam, ref uint lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);

@@ -60,7 +60,7 @@ public interface IInserter
     string? FocusedFieldValue();
     string DescribeFocus();
     void NoteClick(double x, double y);
-    void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done);
+    void Insert(string text, bool atEnd, CapturedSelection? selection, string language, Action<InsertOutcome> done);
 }
 
 public interface IGrokLauncher

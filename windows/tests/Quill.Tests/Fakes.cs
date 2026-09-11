@@ -102,7 +102,10 @@ sealed class FakeInserter : IInserter
     public FrontApp Front { get; set; } = new("Notepad");
     public CapturedSelection? Selection { get; set; }
     public string? Field { get; set; } = "";
-    public List<(string text, bool atEnd, CapturedSelection? sel)> Inserts { get; } = [];
+    public List<(string text, bool atEnd, CapturedSelection? sel, string language)> Inserts { get; } = [];
+    public Action<InsertOutcome>? PendingDone { get; private set; }
+    public bool HoldCompletion { get; set; }
+    public InsertMethod Method { get; set; } = InsertMethod.Accessibility;
     public void RequestTrust() { }
     public void OpenMicrophoneSettings() { }
     public void OpenAccessibilitySettings() { }
@@ -111,11 +114,12 @@ sealed class FakeInserter : IInserter
     public string? FocusedFieldValue() => Field;
     public string DescribeFocus() => "role=edit";
     public void NoteClick(double x, double y) { }
-    public void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
+    public void Insert(string text, bool atEnd, CapturedSelection? selection, string language, Action<InsertOutcome> done)
     {
-        Inserts.Add((text, atEnd, selection));
+        Inserts.Add((text, atEnd, selection, language));
         Field = (Field ?? "") + text;
-        done(new InsertOutcome(InsertMethod.Accessibility, Front.Name));
+        if (HoldCompletion) { PendingDone = done; return; }
+        done(new InsertOutcome(Method, Front.Name));
     }
 }
 
