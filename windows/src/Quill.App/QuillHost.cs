@@ -25,6 +25,8 @@ sealed class QuillHost : IDisposable
     SetupWindow? _setup;
     NativeMenuItem? _startStopItem;
 
+    readonly string? _selfTestPath = Environment.GetEnvironmentVariable("QUILL_SELFTEST");
+
     public QuillHost(IClassicDesktopStyleApplicationLifetime desktop)
     {
         _desktop = desktop;
@@ -33,7 +35,10 @@ sealed class QuillHost : IDisposable
         _hud = new HudWindow(_settings);
         _grok = new WinGrokLauncher(_log.Write);
         _session = new DictationController(
-            _settings, _log, _scheduler, _recorder, _hud, _inserter, _grok, _mic, _keys)
+            _settings, _log, _scheduler, _recorder, _hud, _inserter, _grok, _mic, _keys,
+            selfTestPath: _selfTestPath,
+            selfTestInsert: Environment.GetEnvironmentVariable("QUILL_SELFTEST_INSERT") is not null,
+            selfTestOverlap: Environment.GetEnvironmentVariable("QUILL_SELFTEST_OVERLAP") is not null)
         {
             ResolveCreds = () => Auth.Current(Auth.DefaultPath, _keys.Load()),
         };
@@ -81,6 +86,27 @@ sealed class QuillHost : IDisposable
 
         BuildTray();
         _hud.SetNeedsPermission(!_mic.IsAuthorized || Auth.Current(Auth.DefaultPath, _keys.Load()) is null);
+
+        // QUILL_SELFTEST=<pcm file>: stream the file through the real socket →
+        // transcript → (QUILL_SELFTEST_INSERT) insert path, print the results
+        // on stderr, and quit once every dictation it started has finished.
+        if (!string.IsNullOrEmpty(_selfTestPath))
+        {
+            _session.SelfTestResult += r =>
+            {
+                Console.Error.WriteLine("SELFTEST RESULT: " + r);
+                _log.Write("SELFTEST RESULT: " + r);
+            };
+            _session.SelfTestMethod += m => Console.Error.WriteLine("SELFTEST METHOD: " + m);
+            _session.BecameIdle += () => _scheduler.Delay(TimeSpan.FromSeconds(1), () =>
+            {
+                if (!_session.IsIdle) return;
+                Dispatcher.UIThread.Post(() => _desktop.Shutdown());
+            });
+            _scheduler.Delay(TimeSpan.FromMilliseconds(300), () =>
+                Dispatcher.UIThread.Post(() => _session.Toggle()));
+            return;
+        }
 
         if (_settings.NotifyUpdates)
         {

@@ -150,3 +150,26 @@ sealed class FakeKeys : IApiKeyStore
     public bool Remove() { Key = null; return true; }
     public string? Redacted => Auth.Redact(Key);
 }
+
+/// <summary>A hand-drivable speech-to-text stream: tests fire OnReady / OnText /
+/// OnComplete / OnFailure themselves and inspect what was sent.</summary>
+sealed class FakeStt : ISttClient
+{
+    public Action<string> OnText { get; set; } = _ => { };
+    public Action OnReady { get; set; } = () => { };
+    public Action<string> OnComplete { get; set; } = _ => { };
+    public Action<SttFailure> OnFailure { get; set; } = _ => { };
+    public Action<string>? Log { get; set; }
+    public string Transcript { get; set; } = "";
+    public List<byte[]> Sent { get; } = [];
+    public (string Token, string Language)? Connected { get; private set; }
+    public int FinishCalls { get; private set; }
+    public int CancelCalls { get; private set; }
+    public void Connect(string token, string language) => Connected = (token, language);
+    public void SendPcm(ReadOnlyMemory<byte> pcm) => Sent.Add(pcm.ToArray());
+    public void Finish() => FinishCalls++;
+    public void Cancel() => CancelCalls++;
+
+    /// <summary>Simulate the socket opening (flushes the controller's backlog).</summary>
+    public void Open() => OnReady();
+}
