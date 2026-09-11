@@ -59,7 +59,7 @@ and cannot run on macOS.
 
 ```
 windows/
-  src/Quill.Core     portable logic (commands, STT, spacing, polish…)
+  src/Quill.Core     portable logic (commands, STT, text fitting, polish…)
   src/Quill.App      Avalonia HUD + Win32 hook / recorder / insert
   tests/Quill.Tests  runs on this Mac
 ```
