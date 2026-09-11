@@ -4,7 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 ROOT="$(cd .. && pwd)"
-VERSION="$(cat "$ROOT/VERSION" 2>/dev/null || echo 0.8.3)"
+# Display only — the build itself reads VERSION via Directory.Build.props,
+# so the binary can never disagree with this number.
+VERSION="$(cat "$ROOT/VERSION")"
 export PATH="${HOME}/.dotnet:${PATH}"
 export DOTNET_ROOT="${HOME}/.dotnet"
 export DOTNET_CLI_TELEMETRY_OPTOUT=1
@@ -26,7 +28,6 @@ dotnet publish src/Quill.App/Quill.App.csproj \
   -c Release \
   -r win-x64 \
   --self-contained true \
-  -p:Version="$VERSION" \
   -p:PublishSingleFile=true \
   -p:IncludeNativeLibrariesForSelfExtract=true \
   -p:EnableCompressionInSingleFile=true \
