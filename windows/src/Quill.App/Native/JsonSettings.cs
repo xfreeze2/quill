@@ -37,12 +37,26 @@ sealed class JsonSettingsStore : ISettingsStore
 
     void Save()
     {
-        var dir = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        var obj = new Dictionary<string, object?>();
-        foreach (var (k, v) in _data)
-            obj[k] = JsonSerializer.Deserialize<object>(v.GetRawText());
-        File.WriteAllText(_path, JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true }));
+        try
+        {
+            var dir = Path.GetDirectoryName(_path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            var obj = new Dictionary<string, object?>();
+            foreach (var (k, v) in _data)
+                obj[k] = JsonSerializer.Deserialize<object>(v.GetRawText());
+            var json = JsonSerializer.Serialize(obj, new JsonSerializerOptions { WriteIndented = true });
+            // Write-then-rename, so a crash, kill, or full disk mid-write can
+            // never leave a torn settings.json that silently resets every
+            // preference (and the setup flow) on the next launch.
+            var tmp = _path + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, _path, overwrite: true);
+        }
+        catch
+        {
+            // Keeping the last good file on disk beats crashing over a setting;
+            // the in-memory value still applies for this run.
+        }
     }
 
     public bool GetBool(string key, bool defaultValue)
