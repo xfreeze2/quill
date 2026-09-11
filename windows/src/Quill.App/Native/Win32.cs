@@ -380,6 +380,14 @@ static class Win32
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
     static extern int RegGetValue(IntPtr hkey, string lpSubKey, string? lpValue, uint dwFlags, out uint pdwType, byte[] pvData, ref uint pcbData);
 
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern int RegSetKeyValue(IntPtr hkey, string lpSubKey, string lpValueName, uint dwType, string lpData, uint cbData);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern int RegDeleteKeyValue(IntPtr hkey, string lpSubKey, string lpValueName);
+
+    const uint REG_SZ = 1;
+
     /// <summary>Reads a REG_SZ under HKCU, or null if absent/unreadable.</summary>
     public static string? ReadUserRegistryString(string subKey, string valueName)
     {
@@ -395,6 +403,35 @@ static class Win32
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>Writes a REG_SZ under HKCU. Returns false on failure.</summary>
+    public static bool WriteUserRegistryString(string subKey, string valueName, string value)
+    {
+        try
+        {
+            var bytes = (uint)((value.Length + 1) * sizeof(char));
+            return RegSetKeyValue(HKEY_CURRENT_USER, subKey, valueName, REG_SZ, value, bytes) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Deletes a value under HKCU; absent counts as success.</summary>
+    public static bool DeleteUserRegistryValue(string subKey, string valueName)
+    {
+        const int ErrorFileNotFound = 2;
+        try
+        {
+            var rc = RegDeleteKeyValue(HKEY_CURRENT_USER, subKey, valueName);
+            return rc == 0 || rc == ErrorFileNotFound;
+        }
+        catch
+        {
+            return false;
         }
     }
 
