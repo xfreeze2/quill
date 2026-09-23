@@ -110,6 +110,12 @@ final class DoubleTapRightCommand {
     var onTrigger: () -> Void = {}
     var onFirstEvent: () -> Void = {}
 
+    /// Two quick taps in single-tap mode. The first of them has already been
+    /// delivered through `onTrigger`, so the handler is responsible for undoing it.
+    var onDoubleTap: () -> Void = {}
+    var doubleTapEnabled = false
+    private var sequence = TapSequence()
+
     /// A click anywhere on screen, in CoreGraphics global coordinates. Only
     /// delivered while `watchClicks` is set — that is what lets a recording stop
     /// itself the moment you click where the text should go.
@@ -234,6 +240,7 @@ final class DoubleTapRightCommand {
             if debugKeys { Log.write("    [keys] keyDown code=\(code) → invalidating tap") }
             sawKeyDownSinceTap = true
             lastTapAt = 0
+            sequence.reset()
             return false
         }
 
@@ -245,6 +252,7 @@ final class DoubleTapRightCommand {
             if Self.modifierKeyCodes.contains(code), !event.flags.isEmpty {
                 lastTapAt = 0
                 pressedAt = 0
+                sequence.reset()
             }
             return false
         }
@@ -283,8 +291,17 @@ final class DoubleTapRightCommand {
         }
 
         if singleTap, pressedAt > 0, !sawKeyDownSinceTap, !didSomethingElse, now - pressedAt < tapMaxHold {
+            let kind = sequence.tap(pressedAt: pressedAt, releasedAt: now,
+                                    activityAtPress: activityAtPress, activityAtRelease: activityNow)
             pressedAt = 0
-            DispatchQueue.main.async { [weak self] in self?.onTrigger() }
+            if doubleTapEnabled, kind == .double {
+                if debugKeys { Log.write("    [keys] double tap") }
+                DispatchQueue.main.async { [weak self] in self?.onDoubleTap() }
+            } else {
+                DispatchQueue.main.async { [weak self] in self?.onTrigger() }
+            }
+        } else if singleTap {
+            sequence.reset()
         }
         return false
     }

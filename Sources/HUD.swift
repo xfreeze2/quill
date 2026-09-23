@@ -659,7 +659,7 @@ private final class HUDView: NSView {
 
 /// A rolling, mirrored level meter. Smoothed so speech reads as a shape rather
 /// than a flicker.
-private final class WaveformView: NSView {
+final class WaveformView: NSView {
 
     private var samples = [CGFloat](repeating: 0, count: 34)
     private var smoothed: CGFloat = 0

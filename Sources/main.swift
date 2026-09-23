@@ -28,6 +28,11 @@ enum Defaults {
     static let availableUpdateVersion = "availableUpdateVersion"
     static let availableUpdateURL = "availableUpdateURL"
     static let notifiedUpdateVersion = "notifiedUpdateVersion"
+    static let liveTarget = "liveTarget"
+    static let liveSource = "liveSource"
+    static let liveLayout = "liveLayout"
+    static let liveDoubleTap = "liveDoubleTap"
+    static let liveHideFromCapture = "liveHideFromCapture"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -42,6 +47,11 @@ enum Defaults {
             polish: false,
             keepHistory: true,
             notifyUpdates: true,
+            liveTarget: "en",
+            liveSource: "system",
+            liveLayout: "both",
+            liveDoubleTap: true,
+            liveHideFromCapture: true,
         ])
     }
 
@@ -133,6 +143,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     private let hotkey = DoubleTapRightCommand()
     private let recorder = Recorder()
     private let hud = HUD()
+    private let live = LiveTranslation()
 
     /// The newest dictation — recording, or finishing and still owning the panel.
     private var session: Session?
@@ -201,8 +212,12 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         hotkey.trigger = Defaults.currentTrigger
         applyTapMode()
         hotkey.onTrigger = { [weak self] in self?.toggle() }
+        hotkey.onDoubleTap = { [weak self] in self?.handleDoubleTap() }
         hotkey.onClickAnywhere = { [weak self] point in self?.handleClickAnywhere(at: point) }
         hotkey.onCancel = { [weak self] in self?.cancelSession() }
+
+        live.languages = languages.filter { $0.1 != "auto" }
+        live.onStateChange = { [weak self] in self?.refreshIcon() }
 
         isTrusted = Inserter.isTrusted
         let inputMonitoring = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
@@ -252,6 +267,8 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
             }
+        } else if let liveTest = ProcessInfo.processInfo.environment["QUILL_SELFTEST_LIVE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.startLiveSelfTest(liveTest) }
         } else if selfTestPath != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.toggle() }
         } else {
@@ -290,6 +307,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         // not permission-gated, so single tap no longer depends on Input Monitoring.
         let safe = wanted
         hotkey.singleTap = safe
+        hotkey.doubleTapEnabled = Defaults.bool(Defaults.liveDoubleTap)
         guard loggedTapMode != safe else { return }      // only on change, not every tick
         loggedTapMode = safe
         if wanted && !safe {
@@ -326,7 +344,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     private func refreshIcon() {
         guard let button = statusItem?.button else { return }
-        let name = isRecording ? "waveform.circle.fill" : "waveform"
+        let name = isRecording ? "waveform.circle.fill" : (live.isRunning ? "translate" : "waveform")
         button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Quill")
         button.image?.isTemplate = !isRecording
         button.contentTintColor = isRecording ? .systemRed : nil
@@ -368,6 +386,9 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                               action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
+        menu.addItem(.separator())
+
+        addLiveTranslationItems(to: menu)
         menu.addItem(.separator())
 
         let history = UserDefaults.standard.stringArray(forKey: Defaults.history) ?? []
@@ -506,6 +527,87 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    /// Double-tapping only exists as a separate gesture while the trigger is a
+    /// single tap; in double-tap mode it already means "dictate".
+    private var liveGestureAvailable: Bool {
+        Defaults.bool(Defaults.singleTap) && Defaults.currentTrigger != .f5
+    }
+
+    private func addLiveTranslationItems(to menu: NSMenu) {
+        let toggleItem = NSMenuItem(title: live.isRunning ? "Stop live translation" : "Start live translation",
+                                    action: #selector(toggleLive), keyEquivalent: "")
+        toggleItem.target = self
+        menu.addItem(toggleItem)
+
+        if liveGestureAvailable, Defaults.bool(Defaults.liveDoubleTap) {
+            let hint = NSMenuItem(title: "Double-tap \(Defaults.currentTrigger.title) anywhere",
+                                  action: nil, keyEquivalent: "")
+            hint.isEnabled = false
+            menu.addItem(hint)
+        }
+
+        let liveMenu = NSMenu()
+        liveMenu.autoenablesItems = false
+
+        let targetItem = NSMenuItem(title: "Translate into", action: nil, keyEquivalent: "")
+        liveMenu.addItem(targetItem)
+        liveMenu.setSubmenu(live.targetMenu(), for: targetItem)
+
+        let sourceItem = NSMenuItem(title: "Listen to", action: nil, keyEquivalent: "")
+        liveMenu.addItem(sourceItem)
+        liveMenu.setSubmenu(live.sourceMenu(), for: sourceItem)
+        liveMenu.addItem(.separator())
+
+        let only = NSMenuItem(title: "Show only the translation", action: #selector(toggleLiveLayout), keyEquivalent: "")
+        only.target = self
+        only.state = UserDefaults.standard.string(forKey: Defaults.liveLayout) == TranslatorPanel.Layout.translationOnly.rawValue ? .on : .off
+        liveMenu.addItem(only)
+
+        addToggle(to: liveMenu, title: "Hide from screen sharing", key: Defaults.liveHideFromCapture,
+                  action: #selector(toggleLiveHidden))
+        liveMenu.items.last?.toolTip = "Keeps the translation window out of screen shares and recordings."
+
+        addToggle(to: liveMenu, title: "Double-tap \(Defaults.currentTrigger.title) to open", key: Defaults.liveDoubleTap,
+                  action: #selector(toggleLiveDoubleTap))
+        if !liveGestureAvailable {
+            liveMenu.items.last?.isEnabled = false
+            liveMenu.items.last?.toolTip = "Needs Trigger ▸ Single tap — in double-tap mode, a double tap is dictation."
+        }
+        liveMenu.addItem(.separator())
+
+        let copy = NSMenuItem(title: "Copy last session", action: #selector(copyLiveSession), keyEquivalent: "")
+        copy.target = self
+        copy.isEnabled = live.isRunning || live.lastSessionText != nil
+        liveMenu.addItem(copy)
+
+        let liveItem = NSMenuItem(title: "Live translation", action: nil, keyEquivalent: "")
+        menu.addItem(liveItem)
+        menu.setSubmenu(liveMenu, for: liveItem)
+    }
+
+    @objc private func toggleLive() { live.toggle() }
+    @objc private func toggleLiveLayout() { live.toggleLayout() }
+
+    @objc private func toggleLiveHidden() {
+        Defaults.flip(Defaults.liveHideFromCapture)
+        live.applyCapturePrivacy()
+    }
+
+    @objc private func toggleLiveDoubleTap() {
+        Defaults.flip(Defaults.liveDoubleTap)
+        applyTapMode()
+    }
+
+    @objc private func copyLiveSession() {
+        live.copyLastSession()
+        hud.apply(.notice("Live translation copied"))
+        hud.collapse(after: 1.2)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        live.stop()
     }
 
     private func addToggle(to menu: NSMenu, title: String, key: String, action: Selector) {
@@ -670,6 +772,106 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     @objc private func toggle() {
         isRecording ? stopSession(reason: .hotkey) : startSession()
+    }
+
+    /// Two quick taps. The first already started a dictation — dictation never
+    /// waits to see whether a second tap follows — so that recording was never
+    /// meant, and is dropped without a trace before the translator opens.
+    private func handleDoubleTap() {
+        if let session, session.isRecording, Date().timeIntervalSince(session.startedAt) < 1.5 {
+            Log.write("double tap — dropping the dictation its first tap began")
+            leaveRecordingState(session, reason: .hotkey)
+            session.client.cancel()
+            release(session)
+            hud.apply(.idle, animated: false)
+        }
+        Log.write("double tap — live translation \(live.isRunning ? "off" : "on")")
+        live.toggle()
+    }
+
+    /// QUILL_SELFTEST_LIVE=<file.pcm> plays a 16 kHz mono PCM16 file through
+    /// live translation; QUILL_SELFTEST_LIVE=system listens to what the Mac is
+    /// playing for QUILL_SELFTEST_LIVE_SECONDS (default 30). Every translated
+    /// sentence is printed, then a summary, then Quill quits. Saved settings are
+    /// put back as they were.
+    private func startLiveSelfTest(_ spec: String) {
+        func out(_ line: String) { FileHandle.standardError.write(Data((line + "\n").utf8)) }
+        let env = ProcessInfo.processInfo.environment
+        // From the persistent domain, not object(forKey:) — that also answers
+        // with registered defaults, and restoring those would pin them.
+        let stored = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
+        let saved = [Defaults.liveTarget, Defaults.liveSource].map { ($0, stored[$0]) }
+
+        if let target = env["QUILL_SELFTEST_LIVE_TARGET"] {
+            UserDefaults.standard.set(target, forKey: Defaults.liveTarget)
+        }
+        var duration: TimeInterval
+        if spec == "system" {
+            UserDefaults.standard.set(LiveTranslation.Source.system.rawValue, forKey: Defaults.liveSource)
+            duration = Double(env["QUILL_SELFTEST_LIVE_SECONDS"] ?? "") ?? 30
+            out("LIVE SELFTEST: listening to system audio for \(Int(duration))s")
+        } else {
+            guard let file = PCMFileSource(path: spec) else {
+                out("LIVE SELFTEST: cannot read \(spec)")
+                NSApp.terminate(nil)
+                return
+            }
+            live.sourceOverride = { file }
+            duration = Double(file.seconds) + 8
+            out("LIVE SELFTEST: playing \(file.seconds)s of audio from \(spec)")
+        }
+
+        live.capturableForTest = env["QUILL_SELFTEST_LIVE_CAPTURABLE"] != nil
+        out("LIVE SELFTEST: system audio permission = \(SystemAudioPermission.status)")
+
+        let began = Date()
+        live.onSegmentTranslated = { segment in
+            let at = String(format: "%5.1fs", Date().timeIntervalSince(began))
+            out("LIVE \(at) [\(segment.language ?? "?")] \(segment.original)")
+            out("              → \(segment.sameLanguage ? "(already in the target language)" : segment.translation)")
+        }
+        live.start()
+        if let number = live.panelWindowNumber { out("LIVE PANEL WINDOW: \(number)") }
+
+        // QUILL_SELFTEST_LIVE_SNAPSHOT=<dir>: the panel's pixels mid-sentence,
+        // at the end, and at the end with only the translation showing.
+        if let dir = env["QUILL_SELFTEST_LIVE_SNAPSHOT"] {
+            let shots: [(TimeInterval, String, TranslatorPanel.Layout?)] = [
+                (1.0, "empty", nil), (duration * 0.45, "mid", nil),
+                (duration - 3.0, "both", nil), (duration - 2.0, "translation-only", .translationOnly),
+            ]
+            for (delay, name, layout) in shots {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self else { return }
+                    if let layout { self.live.setLayoutForTest(layout) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        let path = (dir as NSString).appendingPathComponent("panel-\(name).png")
+                        if let png = self.live.panelSnapshot(), (try? png.write(to: URL(fileURLWithPath: path))) != nil {
+                            out("LIVE SNAPSHOT: \(path)")
+                        } else {
+                            out("LIVE SNAPSHOT FAILED: \(name)")
+                        }
+                    }
+                }
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self else { return }
+            out("LIVE SUMMARY: segments=\(self.live.segmentCount) translated=\(self.live.translatedCount)")
+            for (index, line) in self.live.shownLines.enumerated() {
+                out("  \(index + 1). \(line.original)\n     → \(line.translation)")
+            }
+            if env["QUILL_SELFTEST_LIVE_HOLD"] == nil { self.live.stop() }
+            for (key, value) in saved {
+                if let value { UserDefaults.standard.set(value, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+            }
+            let hold = Double(env["QUILL_SELFTEST_LIVE_HOLD"] ?? "") ?? 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + hold) {
+                self.live.stop()
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     private func handleClickAnywhere(at point: CGPoint) {
