@@ -26,6 +26,7 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
+    private static let traceRaw = ProcessInfo.processInfo.environment["QUILL_TRACE_STT"] != nil
 
     /// The server segments an utterance by `start` time. Within one segment the
     /// partials are cumulative (each carries the whole segment so far), and the
@@ -50,8 +51,33 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
     /// that has not opened eight seconds after the recording ended is not going to.
     private let connectGrace: TimeInterval = 8.0
 
+    /// How long to wait for the last words after saying the audio is done.
+    var doneGrace: TimeInterval = 3.0
+
     /// Best transcript so far — fires on every partial.
     var onText: (String) -> Void = { _ in }
+    /// A partial exactly as the server sent it, for callers that follow the
+    /// stream sentence by sentence rather than as one transcript.
+    ///
+    /// Measured against the live endpoint with the language left to auto-detect:
+    /// interim partials carry the growing text of the chunk being spoken; each
+    /// chunk closes with `isFinal`, whose `start` is the utterance's rather
+    /// than the chunk's; and at a pause, `speechFinal` repeats every chunk
+    /// since the last pause, joined. `language` is the socket's — it locks on
+    /// the first speech it hears and stays there.
+    struct Segment {
+        let start: Double
+        let text: String
+        let isFinal: Bool
+        let speechFinal: Bool
+        let language: String?
+        /// When its first word began and its last word ended, on this socket's
+        /// clock — seconds of audio sent to it. Unlike `start`, the chunk's own.
+        let firstWordAt: Double?
+        let lastWordEnd: Double?
+    }
+
+    var onSegment: (Segment) -> Void = { _ in }
     /// The socket is up and audio is being accepted.
     var onReady: () -> Void = {}
     /// Terminal: the complete transcript.
@@ -141,7 +167,7 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.doneTimer?.invalidate()
-            self.doneTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+            self.doneTimer = Timer.scheduledTimer(withTimeInterval: self.doneGrace, repeats: false) { [weak self] _ in
                 self?.complete()
             }
         }
@@ -203,14 +229,32 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
               let type = object["type"] as? String
         else { return }
 
+        if Self.traceRaw {
+            var brief = object
+            if let words = object["words"] as? [[String: Any]] {
+                brief["words"] = "\(words.count) words"
+                    + (words.first.map { " first=\($0)" } ?? "") + (words.last.map { " last=\($0)" } ?? "")
+            }
+            FileHandle.standardError.write(Data("  raw \(brief)\n".utf8))
+        }
+
         switch type {
         case "transcript.partial":
-            record(start: (object["start"] as? Double) ?? 0,
-                   text: (object["text"] as? String) ?? "")
+            let start = (object["start"] as? Double) ?? 0
+            let text = (object["text"] as? String) ?? ""
+            record(start: start, text: text)
             let snapshot = transcript
+            let words = object["words"] as? [[String: Any]]
+            let segment = Segment(start: start, text: text,
+                                  isFinal: (object["is_final"] as? Bool) ?? false,
+                                  speechFinal: (object["speech_final"] as? Bool) ?? false,
+                                  language: object["language"] as? String,
+                                  firstWordAt: words?.first?["start"] as? Double,
+                                  lastWordEnd: words?.last?["end"] as? Double)
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.didFinish else { return }
                 self.onText(snapshot)
+                self.onSegment(segment)
             }
 
         case "transcript.created":

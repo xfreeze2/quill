@@ -15,3 +15,13 @@ echo
 echo "→ VoiceCommands"
 swiftc -swift-version 5 -o "$OUT/commands" Sources/Commands.swift tests/VoiceCommandsTest.swift
 "$OUT/commands"
+
+echo
+echo "→ TapSequence"
+swiftc -swift-version 5 -o "$OUT/taps" Sources/TapSequence.swift tests/TapSequenceTest.swift
+"$OUT/taps"
+
+echo
+echo "→ LiveText"
+swiftc -swift-version 5 -o "$OUT/livetext" Sources/LiveText.swift tests/LiveTextTest.swift
+"$OUT/livetext"

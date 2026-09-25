@@ -18,7 +18,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 # Universal: Apple Silicon AND Intel. Building arm64-only means every Intel Mac
 # gets an app that refuses to launch, with no useful error.
-SDK="$(xcrun --show-sdk-path)"
+# Asked for by name: a bare `--show-sdk-path` can resolve to a Command Line
+# Tools SDK that no longer exists after an Xcode update, and the build dies there.
+SDK="$(xcrun --sdk macosx --show-sdk-path)"
 for ARCH in arm64 x86_64; do
   swiftc \
     -swift-version 5 \
@@ -26,6 +28,7 @@ for ARCH in arm64 x86_64; do
     -target "$ARCH-apple-macos12.0" \
     -sdk "$SDK" \
     -framework Cocoa -framework AVFoundation -framework QuartzCore \
+    -framework CoreAudio -framework AudioToolbox -framework NaturalLanguage \
     Sources/*.swift \
     -o "$BUILD/$APP_NAME-$ARCH"
 done
@@ -49,6 +52,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSMicrophoneUsageDescription</key>
   <string>Quill records your voice and streams it to Grok speech-to-text, using your Grok Build session.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Live translation listens to what your Mac is playing — a call, a video — and streams it to Grok to transcribe and translate.</string>
   <key>NSHumanReadableCopyright</key><string>freeze</string>
 </dict>
 </plist>

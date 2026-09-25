@@ -5,6 +5,9 @@
 Tap a key, talk, then click into whatever window you want the words in. They appear there — at
 the end of what's already written, without touching your clipboard.
 
+**Double-tap it instead** and Quill translates whatever your Mac is playing — the other side of a
+call, a video — live, in a panel beside it. See [Live translation](#live-translation--double-tap-control).
+
 Quill transcribes with **your existing Grok subscription**, so there's no API key to buy and
 nothing metered.
 
@@ -73,6 +76,55 @@ and a full stop the service tacked on is dropped when the rest of your sentence 
 Names, `I`, acronyms and days and months keep their capitals; at the start of a line, a list item,
 or after a full stop nothing is changed. German, which capitalises nouns, is left alone.
 
+### Live translation — double-tap Control
+
+**Double-tap `Control`** and a two-card panel opens in the top-right corner: on top, what is
+being said, as it is said; below, what it means, in your language. It listens to **everything
+your Mac plays** — the other side of a Zoom, Meet, Teams, FaceTime, Slack or WhatsApp call, a
+video, a browser tab — so whoever is speaking, in whatever language, you can read along.
+Press **Escape**, double-tap again, or click ✕ to close it. A single tap still dictates, exactly
+as before — and while you dictate over an open translator, Escape throws away the dictation
+first; a second press closes the translator.
+
+- **Nothing to set up per call.** The language is detected on its own, and it can change mid-call:
+  Spanish, then Japanese, then English all come out right, each in its own script.
+- **Live, not after the fact.** A long sentence is translated while it is still being spoken, and
+  settled within two seconds of the speaker finishing it.
+- **Speech already in your language** is shown as it is rather than sent to be "translated".
+- **Translation only** — the ▭ button hides the top card if you only want the meaning.
+- **Pick the language** — click the language name on the bottom card; it re-translates the last
+  sentences straight away. **System audio ▾** switches to the microphone instead.
+- **Copy** — the ⧉ button copies the whole session, original and translation paired.
+- **It never takes focus.** Clicks on the panel don't pull the keyboard away from your call, and it
+  follows you onto a full-screen call's own Space.
+- **Kept out of screen shares.** macOS is asked to leave the panel out of screen sharing and
+  recordings, so the people on the call don't watch you read the translation. Switch that off
+  under **Live translation ▸ Hide from screen sharing** if you want to share it.
+
+**Why it can hear every call.** Quill uses the macOS system-audio tap, which reads the mix below
+every app. An app can hide its *windows* from screen capture, but there is no way for it to opt
+out of this — a call is just audio being played. Audio headed for AirPods or any other output is
+caught the same way, and plugging headphones in mid-call rebuilds the tap on its own. The one
+exception is DRM video (Netflix, Apple TV+ in Safari), which macOS itself silences for every
+recorder; calls are never protected that way.
+
+**How it stays accurate.** The speech service locks onto the first language it hears on a
+connection and can mishear a different one after it — a Spanish connection once wrote Japanese as
+Spanish-sounding nonsense, and another time dropped an English sentence entirely. Quill watches
+for both: words written in a different language from the one spoken, and seconds of speech that
+never came back as words. Either way it replays that stretch — it keeps the last 40 seconds — to a
+fresh connection set to the right language, and swaps in the corrected sentence. Long calls are
+moved to a fresh connection during a pause every few minutes, so no sentence is ever split
+between two.
+
+The first time, macOS asks whether Quill may record system audio. If you declined, the panel
+says so and has a button to the right Settings pane: **Privacy & Security ▸ Screen & System Audio
+Recording ▸ System Audio Recording Only**. Needs macOS 14.2 or newer; on older systems the panel
+offers the microphone instead.
+
+Double-tapping only exists as its own gesture while the trigger is a *single* tap (the default).
+If you use double-tap to dictate, open live translation from the menu instead.
+
 ### Say "open Grok" to start
 
 Say **"open Grok"** or **"open Grok Build"** as the *first* thing in a dictation and Quill opens a
@@ -105,6 +157,7 @@ end the dictation. The rest of what you said still becomes the prompt when you p
 | **A Grok subscription _or_ an xAI API key** | Quill uses the login the `grok` CLI already stores. No subscription? Add your own key from [console.x.ai](https://console.x.ai) and usage is billed to your account. |
 | **Microphone access** | Asked for on first use |
 | **Accessibility access** | So the trigger key works, and so Quill can type into other apps |
+| **System audio recording** *(optional)* | Only for live translation of calls and videos. macOS 14.2+ |
 
 The setup window shows all of these live, with a button next to whatever isn't ready. It reopens
 from the menu any time.
@@ -127,6 +180,9 @@ Right-click the pill (or the menu-bar icon):
 - **Language** — 26 languages including Chinese, or auto-detect (which works well — the model
   identifies the language on its own)
 - **Recent** — your last 20 transcripts, click to copy
+- **Live translation** — start or stop it; **Translate into** (26 languages, English by default);
+  **Listen to** system audio or the microphone; **Show only the translation**; **Hide from screen
+  sharing** (on); **Double-tap Control to open** (on); **Copy last session**
 - **Appearance** — "Show idle pill" (hide the resting dot entirely; the trigger key, menu-bar icon
   and the session bar while dictating all keep working) and "Reset panel position"
 - **Notify about updates** — checks GitHub once a day, never during a recording; **Check for
@@ -215,6 +271,10 @@ wins — you chose it deliberately.
 
 - Your audio is streamed to xAI's speech-to-text service to be transcribed. Nothing goes anywhere
   else.
+- **Live translation** streams what your Mac plays — only while the panel is open — to the same
+  service, and each sentence to Grok to be translated. The menu bar shows macOS's purple
+  recording dot for as long as it listens. A session is kept in memory only, for **Copy**, and
+  is never written to disk or to the log; the log records counts and timings, never words.
 - Your Grok token is read fresh from `~/.grok/auth.json` at the start of each recording. Quill
   never copies, stores or transmits it anywhere except to xAI.
 - Your last 20 transcripts are kept locally so you can re-copy them from the menu. They live in
@@ -271,7 +331,19 @@ QUILL_SELFTEST=out.pcm ~/Applications/Quill.app/Contents/MacOS/Quill
 QUILL_SELFTEST=out.pcm QUILL_SELFTEST_INSERT=1 ~/Applications/Quill.app/Contents/MacOS/Quill
 ```
 
-Unit tests for the text fitting and the voice-command matching, no app or network needed:
+Live translation, headlessly — a file, or whatever the Mac is playing:
+
+```sh
+QUILL_SELFTEST_LIVE=out.pcm ~/Applications/Quill.app/Contents/MacOS/Quill
+QUILL_SELFTEST_LIVE=system QUILL_SELFTEST_LIVE_SECONDS=40 open -n -a Quill   # prints to its stderr
+```
+
+Each translated sentence is printed as it lands, then the panel's final contents in order.
+`QUILL_SELFTEST_LIVE_SNAPSHOT=<dir>` also saves the panel's pixels mid-sentence and at the end;
+`QUILL_TRACE_LIVE=1` and `QUILL_TRACE_STT=1` print every segment and every raw service message.
+
+Unit tests for the text fitting, the voice-command matching, the tap gesture and the live
+transcript, no app or network needed:
 
 ```sh
 ./tests/run.sh

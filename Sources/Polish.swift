@@ -21,7 +21,7 @@ enum Polisher {
 
     /// The fastest model available, and explicitly non-reasoning: this is a
     /// mechanical correction, and thinking time is pure latency here.
-    private static let model = "grok-4.20-0309-non-reasoning"
+    static let model = "grok-4.20-0309-non-reasoning"
     private static let endpoint = URL(string: "https://api.x.ai/v1/chat/completions")!
 
     private static let instructions = """

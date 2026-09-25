@@ -28,6 +28,14 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         case microphone
         case accessibility
         case grokSession
+        case systemAudio
+
+        /// Shown, but dictation works without it — it never holds up "You're set".
+        var isOptional: Bool { self == .systemAudio }
+
+        static var shown: [Requirement] {
+            allCases.filter { $0 != .systemAudio || SystemAudioPermission.isSupported }
+        }
 
         var title: String {
             switch self {
@@ -35,6 +43,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             case .accessibility: return "Accessibility"
             case .grokSession:
                 return Keychain.hasKey ? "xAI API key" : "Grok sign-in or API key"
+            case .systemAudio:   return "System audio  ·  optional"
             }
         }
 
@@ -46,6 +55,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
                 return "So the trigger key works, and so Quill can type into other apps."
             case .grokSession:
                 return "Sign in to the grok command-line tool once, or use your own xAI API key."
+            case .systemAudio:
+                return "For live translation of calls and videos — double-tap the trigger."
             }
         }
 
@@ -54,6 +65,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
             case .microphone:    return "Allow"
             case .accessibility: return "Open Settings"
             case .grokSession:   return "Use a key"
+            case .systemAudio:   return "Allow"
             }
         }
 
@@ -65,6 +77,8 @@ final class SetupWindow: NSObject, NSWindowDelegate {
                 return AXIsProcessTrusted()
             case .grokSession:
                 return Auth.current() != nil
+            case .systemAudio:
+                return SystemAudioPermission.status == .granted
             }
         }
 
@@ -94,7 +108,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 430),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 490),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false)
@@ -121,7 +135,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
     }
 
     private func buildContent() -> NSView {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 430))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 490))
 
         let title = NSTextField(labelWithString: "Quill")
         title.font = .systemFont(ofSize: 24, weight: .semibold)
@@ -139,7 +153,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        for requirement in Requirement.allCases {
+        for requirement in Requirement.shown {
             let row = Row(requirement: requirement) { [weak self] in
                 self?.perform(requirement)
             }
@@ -193,6 +207,12 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         case .grokSession:
             APIKeyPrompt.show()
             update()
+        case .systemAudio:
+            if SystemAudioPermission.status == .unknown {
+                SystemAudioPermission.request { _ in self.update() }
+            } else {
+                SystemAudioPermission.openSettings()
+            }
         }
     }
 
@@ -212,7 +232,7 @@ final class SetupWindow: NSObject, NSWindowDelegate {
         for row in rows {
             let satisfied = row.requirement.isSatisfied
             row.apply(satisfied: satisfied, note: satisfied ? row.requirement.satisfiedNote : nil)
-            if !satisfied { allGood = false }
+            if !satisfied, !row.requirement.isOptional { allGood = false }
         }
 
         let gesture = Defaults.currentTrigger.gesture(singleTap: Defaults.bool(Defaults.singleTap))
