@@ -113,6 +113,8 @@ static class Win32
     public const uint WM_GETTEXT = 0x000D;
     public const uint WM_GETTEXTLENGTH = 0x000E;
     public const uint EM_REPLACESEL = 0x00C2;
+    public const uint EM_GETSEL = 0x00B0;
+    public const uint EM_SETSEL = 0x00B1;
     public const uint MAPVK_VK_TO_VSC = 0;
     public const int SW_SHOWNOACTIVATE = 4;
     public const int SW_RESTORE = 9;
@@ -164,6 +166,10 @@ static class Win32
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
+
+    // EM_GETSEL: both parameters are pointers the edit control writes into.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, ref uint wParam, ref uint lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 
     [DllImport("user32.dll")]
     public static extern bool IsWindow(IntPtr hWnd);
@@ -374,6 +380,14 @@ static class Win32
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
     static extern int RegGetValue(IntPtr hkey, string lpSubKey, string? lpValue, uint dwFlags, out uint pdwType, byte[] pvData, ref uint pcbData);
 
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern int RegSetKeyValue(IntPtr hkey, string lpSubKey, string lpValueName, uint dwType, string lpData, uint cbData);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern int RegDeleteKeyValue(IntPtr hkey, string lpSubKey, string lpValueName);
+
+    const uint REG_SZ = 1;
+
     /// <summary>Reads a REG_SZ under HKCU, or null if absent/unreadable.</summary>
     public static string? ReadUserRegistryString(string subKey, string valueName)
     {
@@ -389,6 +403,35 @@ static class Win32
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>Writes a REG_SZ under HKCU. Returns false on failure.</summary>
+    public static bool WriteUserRegistryString(string subKey, string valueName, string value)
+    {
+        try
+        {
+            var bytes = (uint)((value.Length + 1) * sizeof(char));
+            return RegSetKeyValue(HKEY_CURRENT_USER, subKey, valueName, REG_SZ, value, bytes) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Deletes a value under HKCU; absent counts as success.</summary>
+    public static bool DeleteUserRegistryValue(string subKey, string valueName)
+    {
+        const int ErrorFileNotFound = 2;
+        try
+        {
+            var rc = RegDeleteKeyValue(HKEY_CURRENT_USER, subKey, valueName);
+            return rc == 0 || rc == ErrorFileNotFound;
+        }
+        catch
+        {
+            return false;
         }
     }
 

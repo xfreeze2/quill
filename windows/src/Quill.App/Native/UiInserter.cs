@@ -78,12 +78,12 @@ sealed class UiInserter : IInserter
         return $"hwnd=0x{hwnd.ToInt64():X} class={ClassName(hwnd)} ours={IsOurs(hwnd)} inputSize={SendInputLayout.Size}";
     }
 
-    public void Insert(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
+    public void Insert(string text, bool atEnd, CapturedSelection? selection, string language, Action<InsertOutcome> done)
     {
         // A failure to insert must never take the app down — report Blocked.
         try
         {
-            InsertCore(text, atEnd, selection, done);
+            InsertCore(text, atEnd, selection, language, done);
         }
         catch (Exception ex)
         {
@@ -92,14 +92,13 @@ sealed class UiInserter : IInserter
         }
     }
 
-    void InsertCore(string text, bool atEnd, CapturedSelection? selection, Action<InsertOutcome> done)
+    void InsertCore(string text, bool atEnd, CapturedSelection? selection, string language, Action<InsertOutcome> done)
     {
         RememberForeignForeground();
         var hwnd = ResolveTarget();
         var app = TitleOf(RootOf(hwnd)) ?? Win32.ForegroundTitle();
-        var payload = Spacing.Apply(text, FocusedFieldValue(), atEnd ? FocusedFieldValue()?.Length : null);
 
-        Log($"insert → {app ?? "?"} · {DescribeFocus()} · {payload.Length} chars");
+        Log($"insert → {app ?? "?"} · {DescribeFocus()} · {text.Length} chars");
 
         if (hwnd == IntPtr.Zero || IsOurs(hwnd))
         {
@@ -118,9 +117,35 @@ sealed class UiInserter : IInserter
         }
 
         var cls = ClassName(hwnd);
+        var isEdit = IsEditClass(cls);
         Log($"  focused class={cls} 0x{hwnd.ToInt64():X}");
 
-        if (IsEditClass(cls))
+        // Only classic Edit/RichEdit fields expose their contents and caret.
+        // Anywhere else WM_GETTEXT returns the window TITLE, which must never
+        // be mistaken for field text — the payload goes through unchanged,
+        // exactly like the Mac when accessibility cannot read the field.
+        string? existing = null;
+        int? caret = null;
+        if (isEdit)
+        {
+            existing = ReadWindowText(hwnd);
+            caret = SelectionStart(hwnd);
+            if (atEnd && existing is not null)
+            {
+                // "Insert at end of field": park the caret there first, or
+                // EM_REPLACESEL would drop the words wherever the caret sat.
+                Win32.SendMessageTimeout(hwnd, Win32.EM_SETSEL,
+                    (IntPtr)existing.Length, (IntPtr)existing.Length,
+                    Win32.SMTO_ABORTIFHUNG, 200, out _);
+            }
+        }
+        var boundary = atEnd ? existing?.Length : (caret ?? existing?.Length);
+        var payload = TextTidy.Fit(text, existing, boundary, language);
+        if (payload != text)
+            Log($"  fitted: \"{Preview(text)}\" → \"{Preview(payload)}\" "
+                + $"(atEnd={atEnd} boundary={boundary?.ToString() ?? "?"}/{existing?.Length.ToString() ?? "-"})");
+
+        if (isEdit)
         {
             if (ReplaceSel(hwnd, payload) && ContainsText(hwnd, payload))
             {
@@ -233,6 +258,18 @@ sealed class UiInserter : IInserter
         return Win32.SendMessageTimeout(hwnd, Win32.EM_REPLACESEL, (IntPtr)1, text,
             Win32.SMTO_ABORTIFHUNG, 800, out _) != IntPtr.Zero;
     }
+
+    /// <summary>Where the selection starts (UTF-16 units) in an Edit/RichEdit, or null.</summary>
+    static int? SelectionStart(IntPtr hwnd)
+    {
+        uint start = 0, end = 0;
+        if (Win32.SendMessageTimeout(hwnd, Win32.EM_GETSEL, ref start, ref end,
+                Win32.SMTO_ABORTIFHUNG, 200, out _) == IntPtr.Zero)
+            return null;
+        return (int)start;
+    }
+
+    static string Preview(string s) => s.Length <= 32 ? s : s[..32] + "…";
 
     static bool TypeChars(IntPtr hwnd, string text)
     {
