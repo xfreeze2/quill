@@ -256,7 +256,7 @@ private final class PanelView: NSView {
         for (button, symbol, tip) in [
             (layoutButton, "rectangle.bottomhalf.filled", "Show only the translation"),
             (copyButton, "doc.on.doc", "Copy this session"),
-            (closeButton, "xmark", "Stop live translation"),
+            (closeButton, "xmark", "Stop live translation (Esc)"),
         ] {
             button.image = Self.symbol(symbol)
             button.imagePosition = .imageOnly

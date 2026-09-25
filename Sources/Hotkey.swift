@@ -122,7 +122,7 @@ final class DoubleTapRightCommand {
     var onClickAnywhere: (CGPoint) -> Void = { _ in }
     var watchClicks = false
 
-    /// Escape pressed during a recording — the user wants this thrown away.
+    /// Escape pressed during a recording or with live translation open.
     var onCancel: () -> Void = {}
 
     private static let escapeKeyCode: Int64 = 53
@@ -136,10 +136,15 @@ final class DoubleTapRightCommand {
     /// asks the hardware whether a key is down and is not gated behind that
     /// permission, so polling it covers the common case. Whichever notices first
     /// wins; a flag stops the cancel firing twice.
+    ///
+    /// Asking for what is already the case changes nothing, and a press that is
+    /// already down when watching starts belongs to whatever came before — so the
+    /// one press that cancels a dictation cannot go on to close the translator.
     func watchForCancel(_ on: Bool) {
+        guard on != (cancelTimer != nil) else { return }
         cancelTimer?.invalidate()
         cancelTimer = nil
-        escapeWasDown = false
+        escapeWasDown = on && CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(Self.escapeKeyCode))
         guard on else { return }
 
         cancelTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in

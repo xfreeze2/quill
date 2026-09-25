@@ -82,7 +82,9 @@ or after a full stop nothing is changed. German, which capitalises nouns, is lef
 being said, as it is said; below, what it means, in your language. It listens to **everything
 your Mac plays** — the other side of a Zoom, Meet, Teams, FaceTime, Slack or WhatsApp call, a
 video, a browser tab — so whoever is speaking, in whatever language, you can read along.
-Double-tap again, or click ✕, to close it. A single tap still dictates, exactly as before.
+Press **Escape**, double-tap again, or click ✕ to close it. A single tap still dictates, exactly
+as before — and while you dictate over an open translator, Escape throws away the dictation
+first; a second press closes the translator.
 
 - **Nothing to set up per call.** The language is detected on its own, and it can change mid-call:
   Spanish, then Japanese, then English all come out right, each in its own script.

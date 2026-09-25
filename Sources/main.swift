@@ -214,10 +214,13 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         hotkey.onTrigger = { [weak self] in self?.toggle() }
         hotkey.onDoubleTap = { [weak self] in self?.handleDoubleTap() }
         hotkey.onClickAnywhere = { [weak self] point in self?.handleClickAnywhere(at: point) }
-        hotkey.onCancel = { [weak self] in self?.cancelSession() }
+        hotkey.onCancel = { [weak self] in self?.handleEscape() }
 
         live.languages = languages.filter { $0.1 != "auto" }
-        live.onStateChange = { [weak self] in self?.refreshIcon() }
+        live.onStateChange = { [weak self] in
+            self?.refreshIcon()
+            self?.updateCancelWatch()
+        }
 
         isTrusted = Inserter.isTrusted
         let inputMonitoring = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
@@ -1218,6 +1221,23 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
     }
 
+    /// Escape is watched while there is something for it to close. It is never
+    /// swallowed: the app underneath still gets it.
+    private func updateCancelWatch() {
+        hotkey.watchForCancel(isRecording || live.isRunning)
+    }
+
+    /// The newest thing goes first: a dictation in progress is thrown away, and
+    /// only a later press closes the translator behind it.
+    private func handleEscape() {
+        if isRecording {
+            cancelSession()
+        } else if live.isRunning {
+            Log.write("live translation closed by Escape")
+            live.stop()
+        }
+    }
+
     /// Escape during a recording — throw it away, insert nothing.
     private func cancelSession() {
         guard let session, session.isRecording else { return }
@@ -1276,7 +1296,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         session.pendingVoiceStop?.cancel()
         session.pendingVoiceStop = nil
         hotkey.watchClicks = false
-        hotkey.watchForCancel(false)
+        updateCancelWatch()
         invalidateTimers()
         recorder.stop()
         refreshIcon()
