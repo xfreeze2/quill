@@ -3,10 +3,16 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.8.3</Version>
-    <AssemblyVersion>0.8.3.0</AssemblyVersion>
-    <FileVersion>0.8.3.0</FileVersion>
-    <InformationalVersion>0.8.3</InformationalVersion>
+    <!-- One source of truth for the version: the VERSION file at the repo
+         root, shared with the Mac app. A -p:Version=... on the command line
+         still wins. The fallback is deliberately implausible so a build that
+         somehow missed the file cannot masquerade as a real release. -->
+    <QuillVersionFile>$(MSBuildThisFileDirectory)../VERSION</QuillVersionFile>
+    <Version Condition="'$(Version)' == '' and Exists('$(QuillVersionFile)')">$([System.IO.File]::ReadAllText('$(QuillVersionFile)').Trim())</Version>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
     <Company>freeze</Company>
     <Product>Quill</Product>
     <Copyright>freeze</Copyright>

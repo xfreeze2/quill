@@ -285,14 +285,36 @@ sealed class HudWindow : Window, IHud
     {
         _settings.HudEdge = "right";
         _settings.HudEdgeOffset = 0.82;
+        _settings.HudScreen = "";
         Place(_kind == HudStateKind.Idle);
     }
 
+    /// <summary>
+    /// The display the pill lives on. The one it was last dropped on wins, for
+    /// as long as it is connected; otherwise wherever it is currently drawn,
+    /// then the primary display. Without the memory, the pill came back on the
+    /// primary display after every relaunch, whatever the user had chosen.
+    /// </summary>
+    Avalonia.Platform.Screen? HomeScreen()
+    {
+        var remembered = _settings.HudScreen;
+        if (remembered.Length > 0)
+        {
+            var match = Screens.All.FirstOrDefault(s => ScreenKey(s) == remembered);
+            if (match is not null) return match;
+        }
+        return (IsVisible ? Screens.ScreenFromWindow(this) : null)
+            ?? Screens.Primary ?? Screens.All.FirstOrDefault();
+    }
+
+    // Avalonia exposes no stable display id, but a monitor's origin in the
+    // virtual desktop is unique and survives relaunches for a given arrangement.
+    static string ScreenKey(Avalonia.Platform.Screen screen) =>
+        $"{screen.Bounds.X},{screen.Bounds.Y}";
+
     void Place(bool compact)
     {
-        // Stay on whichever monitor the pill was dragged to.
-        var screen = (IsVisible ? Screens.ScreenFromWindow(this) : null)
-            ?? Screens.Primary ?? Screens.All.FirstOrDefault();
+        var screen = HomeScreen();
         if (screen is null) return;
         var area = screen.WorkingArea; // physical pixels
         var w = compact ? Compact : ExpandedW;
@@ -402,6 +424,7 @@ sealed class HudWindow : Window, IHud
         var centreY = Position.Y + Bounds.Height * scale / 2;
         _settings.HudEdge = (centreX - area.X) < (area.X + area.Width - centreX) ? "left" : "right";
         _settings.HudEdgeOffset = Math.Clamp((centreY - area.Y) / Math.Max(area.Height, 1), 0.04, 0.96);
+        _settings.HudScreen = ScreenKey(screen);
         Place(true);
     }
 }

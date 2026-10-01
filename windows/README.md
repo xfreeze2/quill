@@ -3,7 +3,9 @@
 Same product as the Mac app: tap a key, talk, the text lands where you point.
 Uses your Grok subscription. Nothing is rebuilt or replaced on the Mac.
 
-Version **0.8.3** — feature-matched to the current Mac release.
+The version always matches the `VERSION` file at the repo root — the same
+number the Mac app ships under. It is stamped into the binary at build time,
+never written down here or in the code.
 
 ## Install
 
@@ -57,7 +59,7 @@ and cannot run on macOS.
 
 ```
 windows/
-  src/Quill.Core     portable logic (commands, STT, spacing, polish…)
+  src/Quill.Core     portable logic (commands, STT, text fitting, polish…)
   src/Quill.App      Avalonia HUD + Win32 hook / recorder / insert
   tests/Quill.Tests  runs on this Mac
 ```

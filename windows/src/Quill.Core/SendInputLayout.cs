@@ -16,9 +16,12 @@ public static class SendInputLayout
     public const uint KeyeventfScancode = 0x0008;
     public const uint KeyeventfExtended = 0x0001;
 
+    public const uint LlkhfExtended = 0x00000001;
     public const uint LlkhfInjected = 0x00000010;
 
     public static bool IsInjected(uint flags) => (flags & LlkhfInjected) != 0;
+
+    public static bool IsExtended(uint flags) => (flags & LlkhfExtended) != 0;
 
     [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public struct INPUT
@@ -57,11 +60,14 @@ public static class SendInputLayout
 
     public static int Size => Marshal.SizeOf<INPUT>();
 
-    public static INPUT Key(ushort vk, ushort scan, bool up, bool unicode = false)
+    public static INPUT Key(ushort vk, ushort scan, bool up, bool unicode = false, bool extended = false)
     {
         uint flags = 0;
         if (up) flags |= KeyeventfKeyup;
         if (unicode) flags |= KeyeventfUnicode;
+        // Right-side modifiers and the nav cluster carry the extended bit; a
+        // replayed Right Win without it would re-enter apps as a left Win.
+        if (extended) flags |= KeyeventfExtended;
         return new INPUT
         {
             type = InputKeyboard,
