@@ -33,6 +33,11 @@ enum Defaults {
     static let liveLayout = "liveLayout"
     static let liveDoubleTap = "liveDoubleTap"
     static let liveHideFromCapture = "liveHideFromCapture"
+    static let meetingCapture = "meetingCapture"
+    static let meetingKeepAudio = "meetingKeepAudio"
+    static let meetingAutoSummarize = "meetingAutoSummarize"
+    static let meetingLiveNotes = "meetingLiveNotes"
+    static let meetingLanguage = "meetingLanguage"
 
     static func register() {
         UserDefaults.standard.register(defaults: [
@@ -52,6 +57,11 @@ enum Defaults {
             liveLayout: "both",
             liveDoubleTap: true,
             liveHideFromCapture: true,
+            meetingCapture: MeetingCapture.call.rawValue,
+            meetingKeepAudio: false,
+            meetingAutoSummarize: true,
+            meetingLiveNotes: true,
+            meetingLanguage: "auto",
         ])
     }
 
@@ -99,6 +109,7 @@ private final class Session {
     let selection: Inserter.Selection?
     let startedAt = Date()
     var finaliseStartedAt: Date?
+    var historyID: UUID?
 
     /// The corner panel belongs to the newest session. An older one that is
     /// still finishing inserts its words quietly rather than flashing "Inserted"
@@ -170,29 +181,25 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     private var selfTestTimer: Timer?
     private var selfTestOverlapPending = ProcessInfo.processInfo.environment["QUILL_SELFTEST_OVERLAP"] != nil
     private let setup = SetupWindow()
+    private var lastCapturePrivacy = true
 
-    /// Grok STT's own list, plus Chinese.
-    ///
-    /// Chinese is absent from the language table inside the grok CLI, but the
-    /// service transcribes it correctly — verified against the live endpoint with
-    /// `language=zh`, with the parameter omitted, and even with `language=en`.
-    /// The underlying model is evidently multilingual and that table is a UI
-    /// subset, so leaving Chinese out would have been an artificial limit.
-    private let languages: [(String, String)] = [
-        ("Auto-detect", "auto"),
-        ("English", "en"),
-        ("Arabic", "ar"), ("Chinese", "zh"), ("Czech", "cs"), ("Danish", "da"),
-        ("Dutch", "nl"), ("Filipino", "fil"), ("French", "fr"), ("German", "de"),
-        ("Hindi", "hi"), ("Indonesian", "id"), ("Italian", "it"), ("Japanese", "ja"),
-        ("Korean", "ko"), ("Macedonian", "mk"), ("Malay", "ms"), ("Persian", "fa"),
-        ("Polish", "pl"), ("Portuguese", "pt"), ("Romanian", "ro"), ("Russian", "ru"),
-        ("Spanish", "es"), ("Swedish", "sv"), ("Thai", "th"), ("Turkish", "tr"),
-        ("Vietnamese", "vi"),
-    ]
+    /// Any self-test drives the app headlessly; none of them should open the
+    /// window or touch the user's saved dictations and meetings.
+    private let isSelfTest = ProcessInfo.processInfo.environment.keys.contains {
+        $0.hasPrefix("QUILL_SELFTEST") || $0 == "QUILL_TEST_UPDATE_CHECK"
+    }
+    private let launchedInBackground = CommandLine.arguments.contains("--background")
+
+    private var languages: [(String, String)] { Languages.all }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Defaults.register()
+        lastCapturePrivacy = Defaults.bool(Defaults.liveHideFromCapture)
         NSApp.setActivationPolicy(.accessory)
+        if !isSelfTest { AppModel.shared.prepare() }
+        LoginItem.migrate()
+        AppMenu.shared.install()
+        wireWindow()
         buildStatusItem()
 
         hud.onClick = { [weak self] in
@@ -218,8 +225,10 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
         live.languages = languages.filter { $0.1 != "auto" }
         live.onStateChange = { [weak self] in
-            self?.refreshIcon()
-            self?.updateCancelWatch()
+            guard let self else { return }
+            AppModel.shared.liveRunning = self.live.isRunning
+            self.refreshIcon()
+            self.updateCancelWatch()
         }
 
         isTrusted = Inserter.isTrusted
@@ -275,6 +284,14 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                 NotesPrompt.show(cleanupIsOn: false, snapshotTo: png)
                 NSApp.terminate(nil)
             }
+        } else if let folder = ProcessInfo.processInfo.environment["QUILL_SELFTEST_UI"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { UITour.run(directory: folder) }
+        } else if let path = ProcessInfo.processInfo.environment["QUILL_SELFTEST_STT_RAW"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { SelfTests.speechRaw(path: path) }
+        } else if let spec = ProcessInfo.processInfo.environment["QUILL_SELFTEST_MEETING_LIVE"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { SelfTests.meetingLive(spec: spec) }
+        } else if let spec = ProcessInfo.processInfo.environment["QUILL_SELFTEST_MEETING"] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { SelfTests.meeting(spec: spec) }
         } else if let path = ProcessInfo.processInfo.environment["QUILL_SELFTEST_POLISH"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.runPolishSelfTest(path) }
         } else if let text = ProcessInfo.processInfo.environment["QUILL_SELFTEST_INSERT_TEXT"] {
@@ -285,6 +302,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         } else if selfTestPath != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.toggle() }
         } else {
+            if !launchedInBackground { MainWindow.shared.show() }
             if Defaults.bool(Defaults.notifyUpdates) {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
                     self?.checkForUpdate(announce: true)
@@ -300,6 +318,54 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    /// Connects the window to the parts of the app that live outside it.
+    private func wireWindow() {
+        let model = AppModel.shared
+        model.bridge = AppModel.Bridge(
+            toggleLive: { [weak self] in self?.live.toggle() },
+            openSetup: { [weak self] in self?.setup.show() },
+            editAPIKey: { APIKeyPrompt.show() },
+            checkForUpdates: { [weak self] in self?.checkForUpdate(force: true) },
+            openUpdatePage: { [weak self] in self?.openUpdatePage() },
+            resetPanelPosition: { [weak self] in self?.resetPanelPosition() },
+            toggleDictation: { [weak self] in self?.toggle() })
+        model.onRecordingChange = { [weak self] in self?.refreshIcon() }
+        NotificationCenter.default.addObserver(self, selector: #selector(defaultsChanged),
+                                               name: UserDefaults.didChangeNotification, object: nil)
+    }
+
+    /// The Settings screen writes preferences directly; this is where the parts
+    /// that need telling find out.
+    @objc private func defaultsChanged() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let trigger = Defaults.currentTrigger
+            if trigger != self.hotkey.trigger { self.applyTrigger(trigger) }
+            self.hud.showsIdlePill = Defaults.bool(Defaults.cornerButton)
+            let hidden = Defaults.bool(Defaults.liveHideFromCapture)
+            if hidden != self.lastCapturePrivacy {
+                self.lastCapturePrivacy = hidden
+                self.live.applyCapturePrivacy()
+            }
+            self.applyTapMode()
+        }
+    }
+
+    private func applyTrigger(_ option: Trigger) {
+        hotkey.trigger = option
+        Log.write("trigger set to \(option.rawValue)")
+        if option == .fnGlobe {
+            // A bare 🌐 press normally shows emoji or switches input source; that
+            // would fire twice on a double-tap. Point it at nothing.
+            UserDefaults.standard.set(0, forKey: "AppleFnUsageType")
+            let task = Process()
+            task.launchPath = "/usr/bin/defaults"
+            task.arguments = ["write", "com.apple.HIToolbox", "AppleFnUsageType", "-int", "0"]
+            try? task.run()
+        }
+        refreshIcon()
     }
 
     /// Single-tap needs Input Monitoring, and it is not optional.
@@ -357,10 +423,14 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     private func refreshIcon() {
         guard let button = statusItem?.button else { return }
-        let name = isRecording ? "waveform.circle.fill" : (live.isRunning ? "translate" : "waveform")
+        let meeting = AppModel.shared.isRecordingMeeting
+        let name = isRecording ? "waveform.circle.fill"
+            : (meeting ? "record.circle.fill" : (live.isRunning ? "translate" : "waveform"))
         button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Quill")
-        button.image?.isTemplate = !isRecording
-        button.contentTintColor = isRecording ? .systemRed : nil
+        button.image?.isTemplate = !(isRecording || meeting)
+        button.contentTintColor = (isRecording || meeting) ? .systemRed : nil
+        button.toolTip = meeting ? "Quill is taking meeting notes"
+            : "Quill — \(Defaults.currentTrigger.gesture(singleTap: Defaults.bool(Defaults.singleTap))) to dictate"
     }
 
     private func showMenu() {
@@ -390,6 +460,11 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         menu.addItem(header)
         menu.addItem(.separator())
 
+        let openItem = NSMenuItem(title: "Open Quill", action: #selector(openWindow), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+        menu.addItem(.separator())
+
         let toggleItem = NSMenuItem(title: isRecording ? "Stop dictation" : "Start dictation",
                                     action: #selector(toggle), keyEquivalent: "")
         toggleItem.target = self
@@ -402,28 +477,45 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         addLiveTranslationItems(to: menu)
+
+        let meetingModel = AppModel.shared
+        let meetingItem = NSMenuItem(title: meetingModel.isRecordingMeeting ? "Stop meeting notes"
+                                        : (meetingModel.hasMeetingSession ? "Finishing meeting notes…" : "Start meeting notes"),
+                                     action: #selector(toggleMeeting), keyEquivalent: "")
+        meetingItem.target = self
+        meetingItem.isEnabled = !(meetingModel.hasMeetingSession && !meetingModel.isRecordingMeeting)
+        menu.addItem(meetingItem)
         menu.addItem(.separator())
 
-        let history = UserDefaults.standard.stringArray(forKey: Defaults.history) ?? []
         do {
             let recent = NSMenu()
             recent.autoenablesItems = false
-            for (index, entry) in history.prefix(8).enumerated() {
-                let title = entry.count > 60 ? String(entry.prefix(60)) + "…" : entry
+            for entry in AppModel.shared.entries.prefix(8) {
+                let flat = entry.text.replacingOccurrences(of: "\n", with: " ")
+                let title = flat.count > 60 ? String(flat.prefix(60)) + "…" : flat
                 let item = NSMenuItem(title: title, action: #selector(copyHistory(_:)), keyEquivalent: "")
                 item.target = self
-                item.tag = index
+                item.representedObject = entry.id
                 recent.addItem(item)
             }
+            if recent.items.isEmpty {
+                let none = NSMenuItem(title: "Nothing yet", action: nil, keyEquivalent: "")
+                none.isEnabled = false
+                recent.addItem(none)
+            }
             recent.addItem(.separator())
+            let all = NSMenuItem(title: "Show all…", action: #selector(openDictations), keyEquivalent: "")
+            all.target = self
+            recent.addItem(all)
             let clear = NSMenuItem(title: "Clear recent", action: #selector(clearHistory), keyEquivalent: "")
             clear.target = self
+            clear.isEnabled = !AppModel.shared.entries.isEmpty
             recent.addItem(clear)
             let keep = NSMenuItem(title: "Keep recent transcripts",
                                   action: #selector(toggleKeepHistory), keyEquivalent: "")
             keep.target = self
             keep.state = Defaults.bool(Defaults.keepHistory) ? .on : .off
-            keep.toolTip = "Stored in preferences as plain text. Turn off if you dictate anything private."
+            keep.toolTip = "Kept in a private file on this Mac. Turn off if you dictate anything private."
             recent.addItem(keep)
 
             let recentItem = NSMenuItem(title: "Recent", action: nil, keyEquivalent: "")
@@ -628,6 +720,27 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         live.stop()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !isSelfTest { MainWindow.shared.show() }
+        return true
+    }
+
+    /// Quitting in the middle of a meeting closes it properly first, so the notes
+    /// and the recording are whole on the next launch.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let model = AppModel.shared
+        guard model.hasMeetingSession else { return .terminateNow }
+        var answered = false
+        let finish = {
+            guard !answered else { return }
+            answered = true
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        model.finishBeforeQuit(finish)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: finish)
+        return .terminateLater
+    }
+
     private func addToggle(to menu: NSMenu, title: String, key: String, action: Selector) {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.target = self
@@ -675,18 +788,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         guard let raw = sender.representedObject as? String,
               let option = Trigger(rawValue: raw) else { return }
         UserDefaults.standard.set(raw, forKey: Defaults.trigger)
-        hotkey.trigger = option
-        Log.write("trigger set to \(option.rawValue)")
-
-        if option == .fnGlobe {
-            // A bare 🌐 press normally shows emoji or switches input source; that
-            // would fire twice on a double-tap. Point it at nothing.
-            UserDefaults.standard.set(0, forKey: "AppleFnUsageType")
-            let task = Process()
-            task.launchPath = "/usr/bin/defaults"
-            task.arguments = ["write", "com.apple.HIToolbox", "AppleFnUsageType", "-int", "0"]
-            try? task.run()
-        }
+        applyTrigger(option)
 
         hud.apply(.notice("Trigger: \(option.gesture(singleTap: Defaults.bool(Defaults.singleTap)))"))
         hud.collapse(after: 2.5)
@@ -727,12 +829,28 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func copyHistory(_ sender: NSMenuItem) {
-        let history = UserDefaults.standard.stringArray(forKey: Defaults.history) ?? []
-        guard sender.tag < history.count else { return }
+        guard let id = sender.representedObject as? UUID,
+              let entry = AppModel.shared.entries.first(where: { $0.id == id }) else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(history[sender.tag], forType: .string)
+        NSPasteboard.general.setString(entry.text, forType: .string)
         hud.apply(.notice("Copied to clipboard"))
         hud.collapse(after: 1.2)
+    }
+
+    @objc private func openWindow() { MainWindow.shared.show() }
+    @objc private func openDictations() { MainWindow.shared.show(.dictation) }
+
+    @objc private func toggleMeeting() {
+        let model = AppModel.shared
+        MainWindow.shared.show(.meetings)
+        if model.isRecordingMeeting {
+            model.stopMeeting()
+            return
+        }
+        let capture = MeetingCapture(rawValue: UserDefaults.standard.string(forKey: Defaults.meetingCapture) ?? "") ?? .call
+        model.startMeeting(capture: capture,
+                           keepAudio: Defaults.bool(Defaults.meetingKeepAudio),
+                           language: UserDefaults.standard.string(forKey: Defaults.meetingLanguage) ?? "auto")
     }
 
     @objc private func openSetup() { setup.show() }
@@ -750,12 +868,15 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                 if force {
                     self.hud.apply(.notice("Couldn't check for updates — \(error.displayMessage)"))
                     self.hud.collapse(after: 3)
+                    AppModel.shared.show(toast: "Couldn't check for updates — \(error.displayMessage)", seconds: 4)
                 }
             case .success(let update):
                 if force {
                     let text = update.map { "Quill \($0.version) is available" } ?? "You're on the latest version"
                     self.hud.apply(.notice(text))
                     self.hud.collapse(after: update == nil ? 2 : 5)
+                    AppModel.shared.show(toast: text, seconds: 3)
+                    AppModel.shared.refreshAccess()
                 }
                 guard announce, let update, !self.isRecording else { return }
                 let alreadyNotified = UserDefaults.standard.string(forKey: Defaults.notifiedUpdateVersion)
@@ -777,7 +898,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     @objc private func toggleNotifyUpdates() { Defaults.flip(Defaults.notifyUpdates) }
 
     @objc private func clearHistory() {
-        UserDefaults.standard.removeObject(forKey: Defaults.history)
+        AppModel.shared.clearHistory()
         Log.write("recent transcripts cleared")
         hud.apply(.notice("Recent transcripts cleared"))
         hud.collapse(after: 2)
@@ -786,10 +907,9 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     @objc private func toggleKeepHistory() {
         Defaults.flip(Defaults.keepHistory)
         let on = Defaults.bool(Defaults.keepHistory)
-        if !on { UserDefaults.standard.removeObject(forKey: Defaults.history) }
         Log.write("keep recent transcripts = \(on)")
         hud.apply(.notice(on ? "Keeping recent transcripts"
-                             : "Not keeping transcripts — existing ones cleared"))
+                             : "Not keeping new transcripts"))
         hud.collapse(after: 2.5)
     }
 
@@ -1456,7 +1576,6 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             return
         }
 
-        remember(trimmed)
         if session.ownsHUD { hud.update(text: trimmed) }
 
         // QUILL_SELFTEST_FORCE_POLISH lets a test run cleanup without changing the
@@ -1481,7 +1600,12 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     /// Everything after the text is final, whichever way it got there. The
     /// self-test lives on this path too — routing it around the real one is how
     /// three separate features ended up appearing to pass while untested.
-    private func completeSession(_ session: Session, with trimmed: String) {
+    private func completeSession(_ session: Session, with spoken: String) {
+        let trimmed = Snippets.expand(spoken, using: Snippets.load())
+        if selfTestPath == nil || ProcessInfo.processInfo.environment["QUILL_DATA_DIR"] != nil {
+            let seconds = (session.finaliseStartedAt ?? Date()).timeIntervalSince(session.startedAt)
+            session.historyID = AppModel.shared.recordDictation(trimmed, seconds: seconds)
+        }
         if selfTestPath != nil {
             FileHandle.standardError.write(Data("SELFTEST RESULT: \(trimmed)\n".utf8))
             // Lets a test wait for background work (e.g. launching Grok) to finish.
@@ -1558,6 +1682,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
                             language: self.currentLanguage) { outcome in
                 switch outcome.method {
                 case .accessibility, .clipboard:
+                    AppModel.shared.noteApp(session.historyID, outcome.app)
                     if let started = session.finaliseStartedAt {
                         Log.write("  tail: stop → inserted in "
                             + String(format: "%.2fs", Date().timeIntervalSince(started)))
@@ -1610,18 +1735,6 @@ final class QuillApp: NSObject, NSApplicationDelegate {
         selfTestTimer = nil
         pauseTimer = nil
     }
-
-    /// Recent dictations, for re-copying from the menu.
-    ///
-    /// These live in preferences, which is a plaintext plist — fine for a shopping
-    /// list, less so if someone dictates something private. Hence the switch, and
-    /// a way to wipe them.
-    private func remember(_ text: String) {
-        guard Defaults.bool(Defaults.keepHistory) else { return }
-        var history = UserDefaults.standard.stringArray(forKey: Defaults.history) ?? []
-        history.insert(text, at: 0)
-        UserDefaults.standard.set(Array(history.prefix(20)), forKey: Defaults.history)
-    }
 }
 
 // MARK: - Login item
@@ -1631,12 +1744,34 @@ enum LoginItem {
     static var plistPath: String { NSHomeDirectory() + "/Library/LaunchAgents/\(label).plist" }
     static var isEnabled: Bool { FileManager.default.fileExists(atPath: plistPath) }
 
+    /// Signing in launches Quill quietly in the menu bar; the window is for when
+    /// you open it yourself.
+    private static func arguments(for path: String) -> [String] {
+        ["/usr/bin/open", "-g", "-a", path, "--args", "--background"]
+    }
+
+    /// Login items made before the window existed would now open it at every
+    /// login. Add the flag to them.
+    static func migrate() {
+        guard let data = FileManager.default.contents(atPath: plistPath),
+              var plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              let args = plist["ProgramArguments"] as? [String],
+              !args.contains("--background"),
+              let index = args.firstIndex(of: "-a"), index + 1 < args.count,
+              let rewritten = try? PropertyListSerialization.data(
+                fromPropertyList: { plist["ProgramArguments"] = arguments(for: args[index + 1]); return plist }(),
+                format: .xml, options: 0)
+        else { return }
+        try? rewritten.write(to: URL(fileURLWithPath: plistPath))
+        Log.write("login item updated to start quietly")
+    }
+
     static func setEnabled(_ enabled: Bool) {
         let fm = FileManager.default
         if enabled {
             let plist: [String: Any] = [
                 "Label": label,
-                "ProgramArguments": ["/usr/bin/open", "-a", Bundle.main.bundlePath],
+                "ProgramArguments": arguments(for: Bundle.main.bundlePath),
                 "RunAtLoad": true,
             ]
             try? fm.createDirectory(atPath: NSHomeDirectory() + "/Library/LaunchAgents",

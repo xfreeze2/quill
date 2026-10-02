@@ -40,3 +40,23 @@ echo
 echo "→ LiveText"
 swiftc -swift-version 5 -o "$OUT/livetext" Sources/LiveText.swift tests/LiveTextTest.swift
 "$OUT/livetext"
+
+echo
+echo "→ DictationHistory"
+swiftc -swift-version 5 -o "$OUT/history" Sources/DictationHistory.swift tests/Check.swift tests/DictationHistoryTest.swift
+"$OUT/history"
+
+echo
+echo "→ Snippets"
+swiftc -swift-version 5 -o "$OUT/snippets" Sources/Snippets.swift tests/Check.swift tests/SnippetsTest.swift
+"$OUT/snippets"
+
+echo
+echo "→ Meetings"
+swiftc -swift-version 5 -o "$OUT/meeting" Sources/DictationHistory.swift Sources/Meeting.swift Sources/MeetingTranscript.swift Sources/MeetingSummary.swift Sources/MeetingTimeline.swift Sources/LiveNotes.swift Sources/MeetingAsk.swift Sources/AppSearch.swift tests/Check.swift tests/MeetingTest.swift
+"$OUT/meeting"
+
+echo
+echo "→ AudioArchive"
+swiftc -swift-version 5 -parse-as-library -o "$OUT/archive" Sources/DictationHistory.swift Sources/AudioArchive.swift tests/Check.swift tests/AudioArchiveTest.swift
+"$OUT/archive"
