@@ -1,0 +1,79 @@
+import Foundation
+
+/// Grok chat completions, shaped for `SummaryRunner`.
+enum MeetingSummarizer {
+
+    static let model = Polisher.model
+    private static let endpoint = URL(string: "https://api.x.ai/v1/chat/completions")!
+
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 120
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
+    /// Summarises on a background thread; `done` is called on main.
+    static func summarize(_ meeting: Meeting, done: @escaping (Result<ParsedSummary, SummaryFailure>) -> Void) {
+        guard let creds = Auth.current() else {
+            return DispatchQueue.main.async {
+                done(.failure(.network("No Grok sign-in found — run `grok` once, or add an xAI API key in Settings")))
+            }
+        }
+        let runner = SummaryRunner { system, user, reply in
+            complete(token: creds.token, system: system, user: user, done: reply)
+        }
+        runner.run(meeting) { result in
+            DispatchQueue.main.async { done(result) }
+        }
+    }
+
+    private static func complete(token: String, system: String, user: String,
+                                 done: @escaping (Result<String, SummaryFailure>) -> Void) {
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "model": model,
+            "temperature": 0.2,
+            "max_tokens": 3_000,
+            "messages": [
+                ["role": "system", "content": system],
+                ["role": "user", "content": user],
+            ],
+        ])
+
+        let started = Date()
+        session.dataTask(with: request) { data, response, error in
+            if let error {
+                Log.write("meeting summary: \(error.localizedDescription)")
+                return done(.failure(.network(describe(error))))
+            }
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                Log.write("meeting summary: HTTP \(http.statusCode)")
+                return done(.failure(http.statusCode == 401 || http.statusCode == 403
+                                     ? .unauthorized : .network("The summary service answered with an error (\(http.statusCode))")))
+            }
+            guard let data,
+                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = root["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let text = message["content"] as? String
+            else { return done(.failure(.unreadable)) }
+            Log.write("meeting summary: answered in \(Int(Date().timeIntervalSince(started) * 1000))ms")
+            done(.success(text))
+        }.resume()
+    }
+
+    private static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        guard ns.domain == NSURLErrorDomain else { return ns.localizedDescription }
+        switch ns.code {
+        case NSURLErrorNotConnectedToInternet: return "No network connection"
+        case NSURLErrorTimedOut:               return "The summary took too long — try again"
+        default:                               return "Couldn't reach the summary service — check your connection"
+        }
+    }
+}

@@ -8,6 +8,11 @@ the end of what's already written, without touching your clipboard.
 **Double-tap it instead** and Quill translates whatever your Mac is playing — the other side of a
 call, a video — live, in a panel beside it. See [Live translation](#live-translation--double-tap-control).
 
+**Open the Quill window** and there's more: everything you've dictated, a **Notepad for meetings**
+that writes down who said what and summarises it when you're done, your own vocabulary and
+snippets, and every setting. See [The Quill window](#the-quill-window) and
+[Meeting notes](#meeting-notes).
+
 Quill transcribes with **your existing Grok subscription**, so there's no API key to buy and
 nothing metered.
 
@@ -75,6 +80,72 @@ the words land after an unfinished sentence — `so I was thinking |` — the fi
 and a full stop the service tacked on is dropped when the rest of your sentence follows the caret.
 Names, `I`, acronyms and days and months keep their capitals; at the start of a line, a list item,
 or after a full stop nothing is changed. German, which capitalises nouns, is left alone.
+
+## The Quill window
+
+Quill lives in the menu bar, and opens as a proper Mac app when you want one: click **Open Quill**
+in the menu-bar menu, or just launch it. It shows in the Dock while the window is open and goes
+back to being quiet when you close it. A meeting you're recording carries on in the menu bar (the
+icon turns red).
+
+| | |
+|---|---|
+| **Home** | Start a dictation, a meeting or live translation; your words today, this week, your streak and speaking pace; the latest dictations and meetings. |
+| **Dictations** | Everything you've dictated, by day. Search, copy, put it back into the app you were in, delete one or all. |
+| **Meetings** | Your meeting notes — start one, watch it live, read the summary, transcript and your own notes afterwards. |
+| **Vocabulary** | Names and terms to spell your way, and **snippets** — say "my email", get the whole address. |
+| **Settings** | Every setting the menu has, plus your account, the permissions Quill needs, and where your data lives. |
+
+⌘1–⌘4 switch sections, ⌘, opens Settings, ⌘N opens a new meeting.
+
+**Snippets.** Add a phrase and what it should become under **Vocabulary ▸ Snippets**. When a
+dictation is exactly that phrase — or contains it — Quill writes the expansion. Matching ignores
+case and the punctuation the transcriber puts around it, a phrase only matches whole words, and a
+longer phrase wins over a shorter one inside it. There's a **Try it** box right there. Expansion
+happens after grammar cleanup, so what you wrote is never reworded.
+
+## Meeting notes
+
+Open **Meetings ▸ +** (or **Start meeting notes** in the menu-bar menu) and pick what you're
+capturing:
+
+- **A call on this Mac** — your microphone is *you*; everything the Mac plays is everyone else.
+  Quill tells the other voices apart.
+- **People in the room** — one microphone, and Quill tells the voices apart.
+
+While it runs you see the notes appear line by line, with who is speaking — the voices are
+numbered at first (Speaker 1, Speaker 2…). The **My notes** pane beside it is yours: jot what
+matters, and it's kept with the meeting and used in the summary.
+
+When you stop, Quill writes the **summary**: an overview, key points, decisions, **action items with
+owners**, and open questions. The title is filled in from what was said, unless you named it. If the
+summary spots a name in the conversation — "thanks, Daniel" — it offers it for that voice; you
+accept or ignore it. Rename a voice yourself any time by clicking its name; the transcript and
+summary follow. **Copy** or **Export** the whole thing as Markdown.
+
+**Sound is optional and off by default.** Switch on *Also keep the sound* for a meeting, or make it
+the default under **Settings ▸ Meetings** (which asks you to confirm). The recording is a compact
+`.m4a` stored only on your Mac next to the notes (about 14 MB an hour); play it back in the
+meeting, click any line of the transcript to jump to it, and delete the recording without losing
+the transcript. Tell people they're being recorded — the laws about it vary.
+
+Everything is kept as text first: the transcript is saved every ten seconds as it goes, so a crash
+or a closed lid loses seconds, not the meeting. A meeting cut short is recovered, with its sound,
+the next time Quill opens.
+
+Details worth knowing:
+
+- Hearing the other side of a **call** needs macOS 14.2 or newer and the same System Audio
+  permission as live translation. Without it Quill says so and listens to the microphone only.
+- **Headphones give the cleanest notes.** On speakers, the microphone hears the call too. Quill
+  removes that echo from your line when it's clear enough to match, so "You" doesn't repeat what the
+  others said — but a faint or garbled echo can slip through.
+- Voices are told apart within one connection. On a very long meeting Quill moves to a fresh
+  connection during a pause, and that voice may come back as a new number. Give both the same
+  name and the transcript reads them as one person.
+- Summaries are written by Grok from the transcript and your notes. They can be wrong; the
+  transcript is always there to check against. Very long meetings are summarised in parts and
+  joined.
 
 ### Live translation — double-tap Control
 
@@ -169,7 +240,8 @@ from the menu any time.
 
 ## Settings
 
-Right-click the pill (or the menu-bar icon):
+Everything below is also in the window's **Settings** screen. Or right-click the pill (or the
+menu-bar icon):
 
 - **Trigger** — `Control`, right `⌘`, right `⌥`, `🌐`, or `F5`; single tap or double tap
 - **Click anywhere to insert** — the click-to-choose-destination gesture
@@ -180,7 +252,8 @@ Right-click the pill (or the menu-bar icon):
 - **Finish when I stop talking** — off, or after 2 / 3 / 5 / 8 seconds of silence
 - **Language** — 26 languages including Chinese, or auto-detect (which works well — the model
   identifies the language on its own)
-- **Recent** — your last 20 transcripts, click to copy
+- **Open Quill** — the window · **Start meeting notes** — begin or end one from anywhere
+- **Recent** — your latest dictations, click to copy; **Show all…** opens the history
 - **Live translation** — start or stop it; **Translate into** (26 languages, English by default);
   **Listen to** system audio or the microphone; **Show only the translation**; **Hide from screen
   sharing** (on); **Double-tap Control to open** (on); **Copy last session**
@@ -239,7 +312,7 @@ back the same way. You cannot lose your words to this feature.
 
 ### Vocabulary & notes
 
-Menu ▸ **Vocabulary & notes…** is a small notepad for names, products and jargon the speech
+**Vocabulary** in the window — or Menu ▸ **Vocabulary & notes…** — is a small notepad for names, products and jargon the speech
 service tends to mishear — one per line, or a line about what you work on. When cleanup is on,
 it's sent along so a misheard word is written your way:
 
@@ -311,9 +384,15 @@ wins — you chose it deliberately.
   that it ran and how long it took.
 - Your Grok token is read fresh from `~/.grok/auth.json` at the start of each recording. Quill
   never copies, stores or transmits it anywhere except to xAI.
-- Your last 20 transcripts are kept locally so you can re-copy them from the menu. They live in
-  preferences as **plain text**, so if you dictate anything private, use **Recent ▸ Clear recent**
-  or switch **Keep recent transcripts** off — that also wipes what's already stored.
+- Your dictations are kept locally so you can find them again, in a private file
+  (`~/Library/Application Support/Quill/history.json`, readable only by you). If you dictate
+  anything private, delete them from **Dictations**, **Recent ▸ Clear recent**, or switch **Keep
+  recent transcripts** off so nothing new is kept.
+- **Meeting notes** stream your microphone — and, for a call, what your Mac plays — to the same
+  speech service while a meeting runs, and send the finished transcript and your notes to Grok's
+  chat service to write the summary. The notes and any sound you chose to keep live in
+  `~/Library/Application Support/Quill/Meetings/`, readable only by you, and nowhere else. The
+  log records counts and timings, never words.
 - Quill does **not** log keystrokes. A debug trail exists for troubleshooting the trigger key and
   stays off unless you explicitly turn it on.
 - `~/Library/Logs/Quill.log` records what it did — which app it wrote into, and whether the text
@@ -376,9 +455,30 @@ Each translated sentence is printed as it lands, then the panel's final contents
 `QUILL_SELFTEST_LIVE_SNAPSHOT=<dir>` also saves the panel's pixels mid-sentence and at the end;
 `QUILL_TRACE_LIVE=1` and `QUILL_TRACE_STT=1` print every segment and every raw service message.
 
+Meeting notes, headlessly — two audio lanes in (your microphone, then the call), the transcript
+and summary out:
+
+```sh
+./tests/make-fixtures.sh   # includes a three-person meeting, as meeting-mic.pcm and meeting-system.pcm
+QUILL_SELFTEST_MEETING=build/fixtures/meeting-mic.pcm:build/fixtures/meeting-system.pcm \
+  QUILL_SELFTEST_KEEP_AUDIO=1 ~/Applications/Quill.app/Contents/MacOS/Quill
+```
+
+Every screen of the window, drawn offscreen into PNGs in light and dark — from invented data, so
+nothing of yours is read — and optionally a whole meeting run through the window's own model:
+
+```sh
+QUILL_SELFTEST_UI=/tmp/quill-ui ~/Applications/Quill.app/Contents/MacOS/Quill
+QUILL_SELFTEST_UI=/tmp/quill-ui QUILL_SELFTEST_UI_MEETING=build/fixtures/meeting-mic.pcm:build/fixtures/meeting-system.pcm …
+```
+
+`QUILL_DATA_DIR=<folder>` points any run at a scratch folder instead of Application Support. The
+app icon is drawn by `swift tools/make-icon.swift`.
+
 Unit tests for the text fitting, the voice-command matching, the tap gesture, how a dictation and
-a live session are assembled from the service's messages, the grammar-cleanup safety check and the
-notes, no app or network needed:
+a live session are assembled from the service's messages, the grammar-cleanup safety check, the
+notes, the history, snippets, and everything about a meeting — who said what, echo removal, the
+summary prompt and parser, the saved files and the audio recording — no app or network needed:
 
 ```sh
 ./tests/run.sh
@@ -407,6 +507,12 @@ QUILL_SELFTEST_FORCE_POLISH=1 QUILL_SELFTEST=build/fixtures/short.pcm …     # 
   drops again, whatever was transcribed so far is inserted rather than thrown away.
 - If your Grok token has expired and `grok` isn't running to refresh it, Quill says so rather than
   failing quietly.
+- Meeting notes: speaker labels are the speech service's best guess. Two people with similar voices
+  can be merged, and someone talking over another may be missed. Crosstalk and a distant microphone
+  are the usual causes.
+- Meeting notes need the network while recording; a dropped connection is retried and replays
+  what it missed, but a long outage leaves a gap in the transcript. The sound, if kept, has no gap.
+- A recording uses whichever microphone macOS is set to use; Quill doesn't pick one.
 - Not notarised — see above.
 
 ## Licence

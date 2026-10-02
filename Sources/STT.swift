@@ -71,6 +71,18 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
         /// clock — seconds of audio sent to it. Unlike `start`, the chunk's own.
         let firstWordAt: Double?
         let lastWordEnd: Double?
+        /// Word by word, with who said it when the socket was opened with
+        /// speaker identification.
+        var words: [Word] = []
+    }
+
+    struct Word: Equatable {
+        let text: String
+        let start: Double
+        let end: Double
+        /// The service's own index for a voice. Opaque: the same index on a
+        /// different socket may be a different person.
+        let speaker: Int?
     }
 
     var onSegment: (Segment) -> Void = { _ in }
@@ -87,7 +99,7 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
     /// True once the socket has opened and audio is actually being accepted.
     var isOpen: Bool { socketOpen }
 
-    func connect(token: String, language: String) {
+    func connect(token: String, language: String, diarize: Bool = false) {
         var components = URLComponents(string: "wss://api.x.ai/v1/stt")!
         var items: [URLQueryItem] = [
             .init(name: "sample_rate", value: "16000"),
@@ -96,6 +108,9 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
         ]
         if !language.isEmpty, language != "auto" {
             items.append(.init(name: "language", value: language))
+        }
+        if diarize {
+            items.append(.init(name: "diarize", value: "true"))
         }
         components.queryItems = items
 
@@ -232,12 +247,19 @@ final class STTClient: NSObject, URLSessionWebSocketDelegate {
             assembled.apply(text, kind: !isFinal ? .interim : (speechFinal ? .utteranceFinal : .chunkFinal))
             let snapshot = transcript
             let words = object["words"] as? [[String: Any]]
-            let segment = Segment(start: start, text: text,
+            var segment = Segment(start: start, text: text,
                                   isFinal: isFinal,
                                   speechFinal: speechFinal,
                                   language: object["language"] as? String,
                                   firstWordAt: words?.first?["start"] as? Double,
                                   lastWordEnd: words?.last?["end"] as? Double)
+            segment.words = (words ?? []).compactMap { raw in
+                guard let word = raw["text"] as? String else { return nil }
+                return Word(text: word,
+                            start: (raw["start"] as? Double) ?? 0,
+                            end: (raw["end"] as? Double) ?? 0,
+                            speaker: raw["speaker"] as? Int)
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.didFinish else { return }
                 self.onText(snapshot)
