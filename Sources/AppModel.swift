@@ -11,39 +11,41 @@ final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     enum Section: String, CaseIterable, Identifiable {
-        case home, history, meetings, vocabulary, settings
+        case meetings, dictation, translate, settings
 
         var id: String { rawValue }
 
         var title: String {
             switch self {
-            case .home:       return "Home"
-            case .history:    return "Dictations"
-            case .meetings:   return "Meetings"
-            case .vocabulary: return "Vocabulary"
-            case .settings:   return "Settings"
+            case .meetings:  return "Meetings"
+            case .dictation: return "Dictation"
+            case .translate: return "Translation"
+            case .settings:  return "Settings"
             }
         }
 
         var symbol: String {
             switch self {
-            case .home:       return "house"
-            case .history:    return "text.quote"
-            case .meetings:   return "person.2.wave.2"
-            case .vocabulary: return "character.book.closed"
-            case .settings:   return "gearshape"
+            case .meetings:  return "person.2.wave.2"
+            case .dictation: return "mic"
+            case .translate: return "character.bubble"
+            case .settings:  return "gearshape"
             }
         }
 
         var shortcut: Character {
             switch self {
-            case .home: return "1"
-            case .history: return "2"
-            case .meetings: return "3"
-            case .vocabulary: return "4"
+            case .meetings: return "1"
+            case .dictation: return "2"
+            case .translate: return "3"
             case .settings: return ","
             }
         }
+    }
+
+    enum DictationTab: String, CaseIterable, Identifiable {
+        case history = "History", vocabulary = "Vocabulary"
+        var id: String { rawValue }
     }
 
     /// What the Mac currently allows, and who is signed in.
@@ -59,7 +61,8 @@ final class AppModel: ObservableObject {
 
     // MARK: State
 
-    @Published var section: Section = .home
+    @Published var section: Section = .meetings
+    @Published var dictationTab: DictationTab = .history
     @Published private(set) var entries: [DictationEntry] = []
     @Published private(set) var stats = DictationStats()
     @Published private(set) var meetings: [Meeting] = []
@@ -228,7 +231,7 @@ final class AppModel: ObservableObject {
             return
         }
         let new = MeetingSession(store: store, capture: capture, keepAudio: keepAudio, language: language,
-                                 testSources: testSources)
+                                 testSources: testSources, liveNotes: Defaults.bool(Defaults.meetingLiveNotes))
         new.onChange = { [weak self] in self?.sessionChanged() }
         new.onFinished = { [weak self] meeting in self?.sessionFinished(meeting) }
         session = new
@@ -364,6 +367,7 @@ final class AppModel: ObservableObject {
                 switch result {
                 case .success(let parsed):
                     meeting.summary = parsed.summary
+                    meeting.chapters = parsed.chapters
                     meeting.summaryState = .ready
                     meeting.summaryError = nil
                     if let title = parsed.title, meeting.titleIsAutomatic { meeting.title = title }

@@ -18,24 +18,24 @@ struct TurnRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            SpeakerAvatar(id: turn.speaker, name: meeting.name(for: turn.speaker), size: 30)
-            VStack(alignment: .leading, spacing: 4) {
+            SpeakerAvatar(id: turn.speaker, name: meeting.name(for: turn.speaker), size: 26)
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     nameView
                     timeView
                 }
                 Text(turn.text)
                     .font(.system(size: 14.5))
-                    .lineSpacing(3)
+                    .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(isPlaying ? Palette.accentSoft : Color.clear))
-        .padding(.horizontal, -8)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 10)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isPlaying ? Palette.accentSoft : Color.clear))
+        .padding(.horizontal, -10)
     }
 
     @ViewBuilder private var nameView: some View {
@@ -45,7 +45,7 @@ struct TurnRow: View {
                 draft = meeting.hasCustomName(turn.speaker) ? name : ""
                 renaming = true
             } label: {
-                Text(name).font(.system(size: 13, weight: .semibold)).foregroundColor(Palette.voice(turn.speaker))
+                Text(name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(Palette.voice(turn.speaker))
             }
             .buttonStyle(.plain)
             .help("Rename this voice")
@@ -56,7 +56,7 @@ struct TurnRow: View {
                 }
             }
         } else {
-            Text(name).font(.system(size: 13, weight: .semibold)).foregroundColor(Palette.voice(turn.speaker))
+            Text(name).font(.system(size: 12.5, weight: .semibold)).foregroundColor(Palette.voice(turn.speaker))
         }
     }
 
@@ -64,7 +64,7 @@ struct TurnRow: View {
         if canSeek {
             Button { onSeek(turn.start) } label: {
                 HStack(spacing: 3) {
-                    Image(systemName: "play.fill").font(.system(size: 7.5))
+                    Image(systemName: "play.fill").font(.system(size: 7))
                     Text(Meeting.clock(turn.start)).font(.system(size: 11.5).monospacedDigit())
                 }
                 .foregroundColor(.secondary)
@@ -77,30 +77,6 @@ struct TurnRow: View {
     }
 }
 
-private struct RenameVoice: View {
-    var defaultName: String
-    @Binding var draft: String
-    var done: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Who is this?").font(.system(size: 13, weight: .semibold))
-            Text("Give the voice a name and every remark by it is updated. Give two voices the same name to join them.")
-                .font(.system(size: 11.5)).foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            TextField(defaultName, text: $draft, onCommit: { done(draft) })
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Button("Reset") { done("") }.buttonStyle(GhostButtonStyle())
-                Spacer()
-                Button("Done") { done(draft) }.buttonStyle(PrimaryButtonStyle())
-            }
-        }
-        .padding(16)
-        .frame(width: 270)
-    }
-}
-
 /// What is being said this moment, not yet final.
 struct LiveTurnRow: View {
     var meeting: Meeting
@@ -108,27 +84,24 @@ struct LiveTurnRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            SpeakerAvatar(id: line.speaker, name: meeting.name(for: line.speaker), size: 30)
+            SpeakerAvatar(id: line.speaker, name: meeting.name(for: line.speaker), size: 26)
                 .opacity(0.7)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(meeting.name(for: line.speaker)).font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Palette.voice(line.speaker).opacity(0.8))
-                    Text("speaking…").font(.system(size: 11.5)).foregroundColor(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(meeting.name(for: line.speaker)).font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(Palette.voice(line.speaker).opacity(0.8))
                 Text(line.text)
                     .font(.system(size: 14.5))
-                    .lineSpacing(3)
+                    .lineSpacing(4)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 }
 
-/// A banner for something the person should know.
+/// Something the person should know.
 struct Notice: View {
     var text: String
     var symbol = "exclamationmark.triangle.fill"
@@ -136,13 +109,13 @@ struct Notice: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 13)).foregroundColor(tint)
+            Image(systemName: symbol).font(.system(size: 12)).foregroundColor(tint).padding(.top, 1)
             Text(text).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(tint.opacity(0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(tint.opacity(0.28), lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(0.10)))
     }
 }
 
@@ -230,36 +203,43 @@ final class MeetingPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     }
 }
 
-struct PlayerBar: View {
-    @ObservedObject var player: MeetingPlayer
+// MARK: - Asking
 
-    var body: some View {
-        HStack(spacing: 12) {
-            Button { player.toggle() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 12, weight: .bold)).foregroundColor(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(Palette.accent))
+/// The back-and-forth with one meeting. Kept while the meeting is open.
+final class AskThread: ObservableObject {
+
+    struct Exchange: Identifiable, Equatable {
+        let id = UUID()
+        var question: String
+        var answer: String?
+        var failure: String?
+    }
+
+    @Published private(set) var exchanges: [Exchange] = []
+    @Published private(set) var busy = false
+
+    func ask(_ question: String, about meeting: Meeting) {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !busy else { return }
+        let exchange = Exchange(question: trimmed)
+        exchanges.append(exchange)
+        busy = true
+        MeetingSummarizer.chat(system: MeetingAsk.system, user: MeetingAsk.user(meeting: meeting, question: trimmed),
+                               maxTokens: 1_200) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self, let index = self.exchanges.firstIndex(where: { $0.id == exchange.id }) else { return }
+                self.busy = false
+                switch result {
+                case .success(let text):
+                    self.exchanges[index].answer = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                case .failure(let failure):
+                    self.exchanges[index].failure = failure.message
+                }
             }
-            .buttonStyle(.plain)
-
-            Text(Meeting.clock(player.position)).font(.system(size: 12).monospacedDigit()).foregroundColor(.secondary)
-                .frame(width: 44, alignment: .trailing)
-            Slider(value: Binding(get: { player.position }, set: { player.seek(to: $0) }),
-                   in: 0...max(1, player.duration))
-            Text(Meeting.clock(player.duration)).font(.system(size: 12).monospacedDigit()).foregroundColor(.secondary)
-                .frame(width: 44, alignment: .leading)
-
-            Button { player.cycleRate() } label: {
-                Text(player.rate == 1 ? "1×" : (player.rate == 1.5 ? "1.5×" : "2×"))
-                    .font(.system(size: 12, weight: .semibold)).frame(width: 34)
-            }
-            .buttonStyle(GhostButtonStyle())
-            .help("Playback speed")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
+    }
+
+    func clear() {
+        exchanges = []
     }
 }

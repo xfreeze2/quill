@@ -36,6 +36,7 @@ enum Defaults {
     static let meetingCapture = "meetingCapture"
     static let meetingKeepAudio = "meetingKeepAudio"
     static let meetingAutoSummarize = "meetingAutoSummarize"
+    static let meetingLiveNotes = "meetingLiveNotes"
     static let meetingLanguage = "meetingLanguage"
 
     static func register() {
@@ -59,6 +60,7 @@ enum Defaults {
             meetingCapture: MeetingCapture.call.rawValue,
             meetingKeepAudio: false,
             meetingAutoSummarize: true,
+            meetingLiveNotes: true,
             meetingLanguage: "auto",
         ])
     }
@@ -836,7 +838,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openWindow() { MainWindow.shared.show() }
-    @objc private func openDictations() { MainWindow.shared.show(.history) }
+    @objc private func openDictations() { MainWindow.shared.show(.dictation) }
 
     @objc private func toggleMeeting() {
         let model = AppModel.shared

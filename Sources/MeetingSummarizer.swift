@@ -29,7 +29,17 @@ enum MeetingSummarizer {
     }
 
     /// A busy service (429, 502, 503) is asked again, twice, after the wait it names or a few seconds.
-    private static func complete(token: String, system: String, user: String, attempt: Int = 1,
+    /// Any single question to Grok, answered on a background thread — the live
+    /// notes and the questions about a meeting use it.
+    static func chat(system: String, user: String, maxTokens: Int = 1_200,
+                     done: @escaping (Result<String, SummaryFailure>) -> Void) {
+        guard let creds = Auth.current() else {
+            return done(.failure(.network("No Grok sign-in found — run `grok` once, or add an xAI API key in Settings")))
+        }
+        complete(token: creds.token, system: system, user: user, maxTokens: maxTokens, done: done)
+    }
+
+    private static func complete(token: String, system: String, user: String, attempt: Int = 1, maxTokens: Int = 3_000,
                                  done: @escaping (Result<String, SummaryFailure>) -> Void) {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -39,7 +49,7 @@ enum MeetingSummarizer {
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "model": model,
             "temperature": 0.2,
-            "max_tokens": 3_000,
+            "max_tokens": maxTokens,
             "messages": [
                 ["role": "system", "content": system],
                 ["role": "user", "content": user],
@@ -58,7 +68,7 @@ enum MeetingSummarizer {
                     let named = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 0
                     let wait = min(20, max(named, Double(attempt) * 4))
                     return DispatchQueue.global().asyncAfter(deadline: .now() + wait) {
-                        complete(token: token, system: system, user: user, attempt: attempt + 1, done: done)
+                        complete(token: token, system: system, user: user, attempt: attempt + 1, maxTokens: maxTokens, done: done)
                     }
                 }
                 if http.statusCode == 401 || http.statusCode == 403 { return done(.failure(.unauthorized)) }

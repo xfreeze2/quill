@@ -1,9 +1,17 @@
 import SwiftUI
 import AppKit
 
-// The look of the Quill window: one quiet palette with a single ink-blue accent,
-// a serif for headlines and numbers so it reads like a notebook rather than a
-// control panel, and plain system type for everything you actually read.
+// The look of the Quill window.
+//
+// Few rules, held everywhere:
+//   • Content is the interface. Notes and lists are laid out like a page, not
+//     stacked in boxes.
+//   • One accent colour, for the one thing to press and for what is selected.
+//     Everything else is neutral; colour is kept for people (speakers) and for
+//     the red of a recording.
+//   • System type at a small set of sizes: 12 for detail, 13–14 for reading,
+//     15 for headings, 22 for a page, 28 for a note's title.
+//   • Hairlines, not shadows. Two corner radii: 8 for controls, 12 for panels.
 
 enum Palette {
 
@@ -17,18 +25,21 @@ enum Palette {
         NSColor(srgbRed: r, green: g, blue: b, alpha: a)
     }
 
-    static let accent = dynamic(light: rgb(0.30, 0.32, 0.84), dark: rgb(0.60, 0.62, 1.00))
-    static let accentSoft = dynamic(light: rgb(0.30, 0.32, 0.84, 0.10), dark: rgb(0.60, 0.62, 1.00, 0.16))
-    static let accentText = dynamic(light: rgb(0.24, 0.26, 0.72), dark: rgb(0.70, 0.72, 1.00))
+    static let accent = dynamic(light: rgb(0.31, 0.29, 0.90), dark: rgb(0.62, 0.62, 1.00))
+    static let accentSoft = dynamic(light: rgb(0.31, 0.29, 0.90, 0.09), dark: rgb(0.62, 0.62, 1.00, 0.16))
+    static let accentText = dynamic(light: rgb(0.27, 0.25, 0.78), dark: rgb(0.72, 0.72, 1.00))
 
-    /// The window behind everything.
-    static let canvas = dynamic(light: rgb(0.962, 0.960, 0.955), dark: rgb(0.105, 0.105, 0.115))
-    /// Cards and panels sitting on the canvas.
-    static let surface = dynamic(light: rgb(1, 1, 1), dark: rgb(0.150, 0.150, 0.165))
-    /// Inset areas: fields, wells, hover fills.
-    static let sunken = dynamic(light: rgb(0, 0, 0, 0.045), dark: rgb(1, 1, 1, 0.065))
-    static let hover = dynamic(light: rgb(0, 0, 0, 0.06), dark: rgb(1, 1, 1, 0.09))
-    static let hairline = dynamic(light: rgb(0, 0, 0, 0.085), dark: rgb(1, 1, 1, 0.10))
+    /// Where notes and lists are read.
+    static let canvas = dynamic(light: rgb(1, 1, 1), dark: rgb(0.118, 0.118, 0.125))
+    /// The list beside a note, and the sidebar's flat stand-in.
+    static let panel = dynamic(light: rgb(0.968, 0.968, 0.974), dark: rgb(0.145, 0.145, 0.155))
+    /// Fields and menus.
+    static let surface = dynamic(light: rgb(1, 1, 1), dark: rgb(0.19, 0.19, 0.205))
+    /// Wells: a search box, a text area, a chart's ground.
+    static let sunken = dynamic(light: rgb(0, 0, 0, 0.04), dark: rgb(1, 1, 1, 0.06))
+    static let hover = dynamic(light: rgb(0, 0, 0, 0.05), dark: rgb(1, 1, 1, 0.075))
+    static let selected = dynamic(light: rgb(0, 0, 0, 0.075), dark: rgb(1, 1, 1, 0.11))
+    static let hairline = dynamic(light: rgb(0, 0, 0, 0.08), dark: rgb(1, 1, 1, 0.10))
 
     static let record = dynamic(light: rgb(0.89, 0.22, 0.24), dark: rgb(1.0, 0.40, 0.42))
     static let positive = dynamic(light: rgb(0.13, 0.58, 0.36), dark: rgb(0.36, 0.80, 0.55))
@@ -52,21 +63,29 @@ enum Palette {
     }
 }
 
+enum Layout {
+    /// The strip at the top of the window where the traffic lights sit.
+    static let titlebar: CGFloat = 40
+    /// Widest a column of reading is allowed to get.
+    static let reading: CGFloat = 720
+}
+
 extension Font {
-    /// Headlines and big numbers: a serif, for the notebook feel.
+    /// A page's or a note's title.
     static func display(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .serif)
+        .system(size: size, weight: weight)
     }
 }
 
 // MARK: - Surfaces
 
+/// A quiet box for the few things that need one: an answer, a form.
 struct Card<Content: View>: View {
     var padding: CGFloat
     var radius: CGFloat
     let content: Content
 
-    init(padding: CGFloat = 18, radius: CGFloat = 14, @ViewBuilder content: () -> Content) {
+    init(padding: CGFloat = 16, radius: CGFloat = 12, @ViewBuilder content: () -> Content) {
         self.padding = padding
         self.radius = radius
         self.content = content()
@@ -75,13 +94,7 @@ struct Card<Content: View>: View {
     var body: some View {
         content
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Palette.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(Palette.hairline, lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(0.035), radius: 8, x: 0, y: 2)
+            .background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Palette.sunken))
     }
 }
 
@@ -108,19 +121,19 @@ struct VisualEffect: NSViewRepresentable {
 
 struct PrimaryButtonStyle: ButtonStyle {
     var tint: Color = Palette.accent
+    var large = false
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: large ? 14 : 13, weight: .semibold))
             .foregroundColor(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .padding(.horizontal, large ? 22 : 14)
+            .padding(.vertical, large ? 10 : 7)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(tint.opacity(isEnabled ? (configuration.isPressed ? 0.80 : 1) : 0.4))
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(tint.opacity(isEnabled ? (configuration.isPressed ? 0.82 : 1) : 0.35))
             )
-            .shadow(color: tint.opacity(isEnabled ? 0.28 : 0), radius: 6, x: 0, y: 2)
             .contentShape(Rectangle())
     }
 }
@@ -132,15 +145,13 @@ struct SecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(isEnabled ? .primary : .secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(configuration.isPressed ? Palette.hover : Palette.surface)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(configuration.isPressed ? Palette.selected : Palette.surface)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Palette.hairline, lineWidth: 1)
-            )
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
             .contentShape(Rectangle())
     }
 }
@@ -154,10 +165,10 @@ struct GhostButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 12.5, weight: .medium))
             .foregroundColor(tint ?? .secondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(configuration.isPressed || hovering ? Palette.hover : Color.clear)
             )
             .contentShape(Rectangle())
@@ -166,7 +177,7 @@ struct GhostButtonStyle: ButtonStyle {
 }
 
 struct IconButtonStyle: ButtonStyle {
-    var size: CGFloat = 28
+    var size: CGFloat = 26
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -174,27 +185,56 @@ struct IconButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(.secondary)
             .frame(width: size, height: size)
-            .background(Circle().fill(configuration.isPressed || hovering ? Palette.hover : Color.clear))
-            .contentShape(Circle())
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(configuration.isPressed || hovering ? Palette.hover : Color.clear))
+            .contentShape(Rectangle())
             .onHover { hovering = $0 }
     }
 }
 
 // MARK: - Small pieces
 
+/// Tabs as plain words with a line under the chosen one.
+struct TabStrip<Tab: Hashable>: View {
+    let tabs: [Tab]
+    @Binding var selection: Tab
+    var title: (Tab) -> String
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 22) {
+            ForEach(tabs, id: \.self) { tab in
+                let isSelected = tab == selection
+                Button { selection = tab } label: {
+                    VStack(spacing: 8) {
+                        Text(title(tab))
+                            .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
+                            .foregroundColor(isSelected ? .primary : .secondary)
+                        Rectangle().fill(isSelected ? Palette.accent : Color.clear).frame(height: 2)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1).offset(y: 0) }
+    }
+}
+
+/// A small tag. Used sparingly.
 struct Chip: View {
     var text: String
     var symbol: String? = nil
     var tint: Color = .secondary
 
     var body: some View {
-        HStack(spacing: 5) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 10.5, weight: .semibold)) }
+        HStack(spacing: 4) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
             Text(text).font(.system(size: 11.5, weight: .medium))
         }
         .foregroundColor(tint)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
         .background(Capsule().fill(tint.opacity(0.12)))
     }
 }
@@ -206,19 +246,19 @@ struct Keycap: View {
         Text(text)
             .font(.system(size: 12, weight: .semibold, design: .rounded))
             .foregroundColor(.primary)
-            .frame(minWidth: 22)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Palette.surface))
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
-            .shadow(color: Color.black.opacity(0.06), radius: 0, x: 0, y: 1)
+            .frame(minWidth: 20)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Palette.surface))
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
     }
 }
 
 struct SpeakerAvatar: View {
     var id: String
     var name: String
-    var size: CGFloat = 30
+    var size: CGFloat = 28
+    var ring = false
 
     private var initials: String {
         let words = name.split(separator: " ").prefix(2)
@@ -231,10 +271,11 @@ struct SpeakerAvatar: View {
         ZStack {
             Circle().fill(tint.opacity(0.16))
             Text(initials)
-                .font(.system(size: size * 0.38, weight: .semibold, design: .rounded))
+                .font(.system(size: size * 0.4, weight: .semibold, design: .rounded))
                 .foregroundColor(tint)
         }
         .frame(width: size, height: size)
+        .overlay(Circle().stroke(tint, lineWidth: ring ? 2 : 0).padding(ring ? -3 : 0))
     }
 }
 
@@ -247,26 +288,27 @@ struct LevelBars: View {
     var body: some View {
         HStack(alignment: .center, spacing: 2.5) {
             ForEach(0..<shape.count, id: \.self) { index in
-                let height = 4 + 14 * CGFloat(min(1, max(0, level))) * shape[index]
+                let height = 4 + 12 * CGFloat(min(1, max(0, level))) * shape[index]
                 Capsule()
                     .fill(tint.opacity(level > 0.04 ? 0.95 : 0.35))
                     .frame(width: 3, height: height)
             }
         }
-        .frame(height: 20)
+        .frame(height: 16)
         .animation(.easeOut(duration: 0.12), value: level)
     }
 }
 
 struct PulsingDot: View {
     var tint: Color = Palette.record
+    var size: CGFloat = 8
     @State private var on = false
 
     var body: some View {
         Circle()
             .fill(tint)
-            .frame(width: 9, height: 9)
-            .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 4).scaleEffect(on ? 1.5 : 1).opacity(on ? 0 : 0.8))
+            .frame(width: size, height: size)
+            .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 3).scaleEffect(on ? 1.6 : 1).opacity(on ? 0 : 0.8))
             .onAppear {
                 withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) { on = true }
             }
@@ -281,22 +323,22 @@ struct EmptyState: View {
     var action: (() -> Void)? = nil
 
     var body: some View {
-        VStack(spacing: 10) {
-            ZStack {
-                Circle().fill(Palette.accentSoft).frame(width: 64, height: 64)
-                Image(systemName: symbol).font(.system(size: 26, weight: .regular)).foregroundColor(Palette.accent)
-            }
-            Text(title).font(.display(19))
+        VStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 26, weight: .light))
+                .foregroundColor(.secondary)
+                .padding(.bottom, 4)
+            Text(title).font(.system(size: 15, weight: .semibold))
             Text(message)
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 340)
+                .frame(maxWidth: 320)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(PrimaryButtonStyle())
-                    .padding(.top, 6)
+                    .padding(.top, 8)
             }
         }
         .padding(30)
@@ -310,8 +352,8 @@ struct SearchBox: View {
     var prompt = "Search"
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .medium)).foregroundColor(.secondary)
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").font(.system(size: 11.5, weight: .medium)).foregroundColor(.secondary)
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -322,9 +364,9 @@ struct SearchBox: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Palette.sunken))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.sunken))
     }
 }
 
@@ -332,14 +374,13 @@ struct SearchBox: View {
 struct SectionLabel: View {
     var text: String
     var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .tracking(0.7)
+        Text(text)
+            .font(.system(size: 12, weight: .semibold))
             .foregroundColor(.secondary)
     }
 }
 
-/// One line of a settings card: what it does, and the control for it.
+/// One line of settings: what it does, and the control for it.
 struct SettingRow<Control: View>: View {
     var title: String
     var detail: String?
@@ -354,7 +395,7 @@ struct SettingRow<Control: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13.5, weight: .medium))
+                Text(title).font(.system(size: 13.5))
                 if let detail {
                     Text(detail)
                         .font(.system(size: 12))
@@ -365,11 +406,11 @@ struct SettingRow<Control: View>: View {
             Spacer(minLength: 12)
             control
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
     }
 }
 
-/// A hairline between rows inside a card.
+/// A hairline between rows.
 struct RowDivider: View {
     var body: some View { Rectangle().fill(Palette.hairline).frame(height: 1) }
 }
@@ -377,7 +418,7 @@ struct RowDivider: View {
 // MARK: - Multi-line text
 
 /// A text area with no chrome of its own — the system `TextEditor` paints an
-/// opaque background on macOS 12 that fights a card.
+/// opaque background on macOS 12 that fights the page.
 struct NotesEditor: NSViewRepresentable {
     @Binding var text: String
     var placeholder = ""
@@ -453,13 +494,6 @@ final class PlaceholderTextView: NSTextView {
 
 // MARK: - Helpers
 
-extension View {
-    /// Runs `action` whenever the pointer enters or leaves, and reports which.
-    func hovering(_ binding: Binding<Bool>) -> some View {
-        onHover { binding.wrappedValue = $0 }
-    }
-}
-
 enum Formatting {
     static func count(_ number: Int) -> String {
         let formatter = NumberFormatter()
@@ -493,14 +527,5 @@ enum Formatting {
         let formatter = DateFormatter()
         formatter.setLocalizedDateFormatFromTemplate("MMMd")
         return formatter.string(from: date) + ", " + time(date)
-    }
-
-    static func greeting(now: Date = Date(), calendar: Calendar = .current) -> String {
-        switch calendar.component(.hour, from: now) {
-        case 5..<12:  return "Good morning"
-        case 12..<18: return "Good afternoon"
-        case 18..<23: return "Good evening"
-        default:      return "Still up"
-        }
     }
 }

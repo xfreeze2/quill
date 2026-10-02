@@ -22,6 +22,21 @@ struct ActionItem: Codable, Equatable, Identifiable {
     var done = false
 }
 
+/// A stretch of the conversation about one thing, with where it begins.
+struct Chapter: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var title: String
+    var start: Double
+}
+
+/// One line of the notes Quill keeps by itself while the meeting is still going.
+struct LiveNote: Codable, Equatable, Identifiable {
+    var id = UUID()
+    /// Seconds into the meeting that the note is about.
+    var time: Double
+    var text: String
+}
+
 struct MeetingSummary: Codable, Equatable {
     var overview = ""
     var keyPoints: [String] = []
@@ -64,6 +79,9 @@ struct Meeting: Codable, Identifiable, Equatable {
     /// Names the summary worked out from the conversation, not yet accepted.
     var suggestedNames: [String: String] = [:]
     var userNotes = ""
+    /// Written as the meeting goes; the summary replaces them in the reading.
+    var liveNotes: [LiveNote] = []
+    var chapters: [Chapter] = []
     var summary: MeetingSummary?
     var summaryState: SummaryState = .none
     var summaryError: String?
@@ -80,7 +98,7 @@ struct Meeting: Codable, Identifiable, Equatable {
     // Written by hand so a file from an older or newer Quill still opens.
     private enum Key: String, CodingKey {
         case id, title, createdAt, endedAt, capture, utterances, speakerNames, suggestedNames
-        case userNotes, summary, summaryState, summaryError, hasAudio, titleIsAutomatic
+        case userNotes, summary, summaryState, summaryError, hasAudio, titleIsAutomatic, liveNotes, chapters
     }
 
     init(from decoder: Decoder) throws {
@@ -94,6 +112,8 @@ struct Meeting: Codable, Identifiable, Equatable {
         speakerNames = try c.decodeIfPresent([String: String].self, forKey: .speakerNames) ?? [:]
         suggestedNames = try c.decodeIfPresent([String: String].self, forKey: .suggestedNames) ?? [:]
         userNotes = try c.decodeIfPresent(String.self, forKey: .userNotes) ?? ""
+        liveNotes = try c.decodeIfPresent([LiveNote].self, forKey: .liveNotes) ?? []
+        chapters = try c.decodeIfPresent([Chapter].self, forKey: .chapters) ?? []
         summary = try c.decodeIfPresent(MeetingSummary.self, forKey: .summary)
         summaryState = try c.decodeIfPresent(SummaryState.self, forKey: .summaryState) ?? .none
         summaryError = try c.decodeIfPresent(String.self, forKey: .summaryError)
@@ -218,6 +238,7 @@ enum MeetingMarkdown {
         if let summary = meeting.summary, !summary.isEmpty {
             out += "\n## Summary\n\n"
             if !summary.overview.isEmpty { out += summary.overview + "\n" }
+            out += section("Topics", meeting.chapters.map { "- \(Meeting.clock($0.start)) — \($0.title)" })
             out += section("Key points", summary.keyPoints.map { "- \($0)" })
             out += section("Decisions", summary.decisions.map { "- \($0)" })
             out += section("Action items", summary.actionItems.map { item in
@@ -225,6 +246,10 @@ enum MeetingMarkdown {
                 return "- [\(item.done ? "x" : " ")] \(owner)\(item.task)"
             })
             out += section("Open questions", summary.openQuestions.map { "- \($0)" })
+        }
+
+        if (meeting.summary?.isEmpty ?? true), !meeting.liveNotes.isEmpty {
+            out += "\n## Notes\n\n" + meeting.liveNotes.map { "- (\(Meeting.clock($0.time))) \($0.text)" }.joined(separator: "\n") + "\n"
         }
 
         let notes = meeting.userNotes.trimmingCharacters(in: .whitespacesAndNewlines)

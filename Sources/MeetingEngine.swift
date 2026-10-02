@@ -309,13 +309,24 @@ final class MeetingSession {
     private var timer: Timer?
     private var dirty = false
     private var lastSavedAt = Date.distantPast
+    private let takesLiveNotes: Bool
+    private let chat: (String, String, @escaping (Result<String, SummaryFailure>) -> Void) -> Void
+    private var pacer = LiveNotesPacer()
+    /// How many remarks the live notes already cover.
+    private var notedCount = 0
 
-    init(store: MeetingStore, capture: MeetingCapture, keepAudio: Bool, language: String = "auto", testSources: Sources? = nil) {
+    init(store: MeetingStore, capture: MeetingCapture, keepAudio: Bool, language: String = "auto", testSources: Sources? = nil,
+         liveNotes: Bool = true,
+         chat: ((String, String, @escaping (Result<String, SummaryFailure>) -> Void) -> Void)? = nil) {
         self.store = store
         self.capture = capture
         self.keepsAudio = keepAudio
         self.language = language
         self.testSources = testSources
+        self.takesLiveNotes = liveNotes
+        self.chat = chat ?? { system, user, done in
+            MeetingSummarizer.chat(system: system, user: user, maxTokens: 400, done: done)
+        }
         meeting = Meeting(title: Meeting.defaultTitle(for: Date()), createdAt: Date(), capture: capture)
     }
 
@@ -476,8 +487,42 @@ final class MeetingSession {
         onChange()
     }
 
+    /// Every little while, the newest stretch of talk is boiled down to a line or
+    /// two. A failure is quiet: the transcript is the record, the notes a bonus.
+    private func askForNotes() {
+        guard takesLiveNotes, phase == .recording else { return }
+        let all = transcript.utterances
+        guard notedCount < all.count else { return }
+        let fresh = Array(all[notedCount...])
+        let words = fresh.reduce(0) { $0 + DictationEntry.wordCount(of: $1.text) }
+        guard pacer.shouldAsk(newWords: words) else { return }
+
+        var batch = meeting
+        batch.utterances = fresh
+        let covered = all.count
+        let time = fresh.map(\.end).max() ?? elapsed
+        pacer.began()
+        chat(LiveNotesPrompt.system, LiveNotesPrompt.user(previous: meeting.liveNotes.map(\.text), lines: batch.transcriptLines())) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self, self.phase == .recording || self.phase == .stopping else { return }
+                if case .success(let raw) = result, let notes = LiveNotesParser.parse(raw) {
+                    self.pacer.ended(succeeded: true)
+                    self.notedCount = max(self.notedCount, covered)
+                    guard !notes.isEmpty else { return }
+                    self.meeting.liveNotes += notes.map { LiveNote(time: time, text: $0) }
+                    self.dirty = true
+                    self.onChange()
+                } else {
+                    self.pacer.ended(succeeded: false)
+                    Log.write("meeting: live notes — no notes this time (attempt \(self.pacer.failures))")
+                }
+            }
+        }
+    }
+
     private func tick() {
         lanes.forEach { $0.tick() }
+        askForNotes()
         if dirty, Date().timeIntervalSince(lastSavedAt) > 10 {
             store.save(meeting)
             dirty = false

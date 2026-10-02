@@ -338,6 +338,97 @@ enum MeetingTest {
         }
         check.isTrue("if the joining fails the parts are joined by hand", summaryOf(joinFails.result)?.summary.keyPoints.count == groupsNeeded)
 
+        // ── Who spoke when ───────────────────────────────────────────────────────
+        var convo = Meeting(title: "Map", createdAt: Date(timeIntervalSince1970: 1_790_000_000))
+        convo.utterances = [
+            Utterance(id: 0, speaker: "you", start: 0, end: 10, text: "one two three four five six seven eight nine ten"),
+            Utterance(id: 1, speaker: "s0", start: 10.5, end: 20, text: "alpha beta gamma delta"),
+            Utterance(id: 2, speaker: "you", start: 21, end: 30, text: "eleven twelve"),
+            Utterance(id: 3, speaker: "s1", start: 50, end: 60, text: "late voice"),
+            Utterance(id: 4, speaker: "s0", start: 60.5, end: 70, text: "more words here"),
+        ]
+        convo.speakerNames = ["s1": "Karen", "s0": "Karen"]
+        convo.endedAt = convo.createdAt.addingTimeInterval(80)
+        convo.chapters = [Chapter(title: "Start", start: 0), Chapter(title: "Later", start: 50)]
+        let map = MeetingTimeline(convo)
+        check.equal("a lane per person, in the order they first spoke", map.lanes.map(\.name), ["You", "Karen"])
+        check.equal("two voices with one name are one person", map.lanes.last?.segments.count, 2)
+        check.equal("remarks close together are one stretch", map.lanes.first?.segments, [
+            MeetingTimeline.Segment(start: 0, end: 10), MeetingTimeline.Segment(start: 21, end: 30)])
+        check.isTrue("shares add up to one", abs(map.lanes.map(\.share).reduce(0, +) - 1) < 0.0001)
+        check.isTrue("you spoke 19 of 48.5 seconds", abs((map.lanes.first?.share ?? 0) - 19 / 48.5) < 0.01)
+        check.equal("the length of the meeting", map.duration, 80)
+        check.equal("chapters come along", map.chapters.map(\.title), ["Start", "Later"])
+        check.equal("who was talking at 5s", map.speaker(at: 5)?.name, "You")
+        check.equal("and at 65s", map.speaker(at: 65)?.name, "Karen")
+        check.isTrue("and no one in a silence", map.speaker(at: 40) == nil)
+        check.equal("a whole share", MeetingTimeline.percent(0.314), "31%")
+        check.equal("a sliver", MeetingTimeline.percent(0.004), "<1%")
+        check.isTrue("no talk, no lanes", MeetingTimeline(Meeting(title: "Empty")).isEmpty)
+
+        // ── Chapters ─────────────────────────────────────────────────────────────
+        let chaptered = SummaryParser.parse(#"{"title":"T","overview":"O","keyPoints":[],"decisions":[],"actionItems":[],"openQuestions":[],"speakers":{},"chapters":[{"title":"Wrap-up","start":"1:02:03"},{"title":"Intro","start":"[0:05]"},{"title":"Middle","start":125},{"title":"Dupe","start":"0:05"},{"title":"","start":"3:00"},{"title":"No time"}]}"#)
+        check.equal("chapters are read in order", chaptered?.chapters.map(\.title), ["Intro", "Middle", "Wrap-up"])
+        check.equal("with their times", chaptered?.chapters.map(\.start), [5, 125, 3723])
+        check.isTrue("a reply without chapters is fine", SummaryParser.parse(#"{"overview":"O"}"#)?.chapters.isEmpty == true)
+        check.equal("a clock time", SummaryParser.seconds("12:03"), 723)
+        check.isTrue("not a time", SummaryParser.seconds("soon") == nil)
+        var withChapters = convo
+        withChapters.summary = MeetingSummary(overview: "O.", keyPoints: ["k"])
+        check.isTrue("topics reach the Markdown", MeetingMarkdown.render(withChapters).contains("### Topics\n\n- 0:00 — Start\n- 0:50 — Later"))
+        let chapterFile = scratchDirectory("chapters")
+        defer { try? FileManager.default.removeItem(at: chapterFile) }
+        let chapterStore = MeetingStore(directory: chapterFile)
+        withChapters.liveNotes = [LiveNote(time: 12, text: "Launch is Thursday.")]
+        chapterStore.save(withChapters)
+        check.equal("chapters and live notes round-trip", chapterStore.all().first, withChapters)
+        var onlyNotes = convo
+        onlyNotes.liveNotes = [LiveNote(time: 65, text: "Karen sends the list.")]
+        check.isTrue("with no summary the live notes are the notes", MeetingMarkdown.render(onlyNotes).contains("## Notes\n\n- (1:05) Karen sends the list."))
+        check.isTrue("with a summary they are not repeated", !MeetingMarkdown.render({ var m = withChapters; m.liveNotes = [LiveNote(time: 1, text: "ZZZ")]; return m }()).contains("ZZZ"))
+
+        // ── Live notes ───────────────────────────────────────────────────────────
+        check.equal("a note per line", LiveNotesParser.parse(#"{"notes":["Launch is Thursday.","- Daniel sends the schedule."]}"#),
+                    ["Launch is Thursday.", "Daniel sends the schedule."])
+        check.equal("nothing new is fine", LiveNotesParser.parse(#"Sure! {"notes": []}"#), [])
+        check.equal("no more than three", LiveNotesParser.parse(#"{"notes":["a","b","c","d","e"]}"#)?.count, 3)
+        check.equal("a list sent as one string", LiveNotesParser.parse(#"{"notes":"- one\n- two"}"#), ["one", "two"])
+        check.isTrue("not the object asked for", LiveNotesParser.parse("I can't help with that.") == nil)
+        check.isTrue("an object without notes", LiveNotesParser.parse(#"{"summary":"x"}"#) == nil)
+        let notesPrompt = LiveNotesPrompt.user(previous: ["Launch is Thursday."], lines: ["[0:12] Karen: Hello."])
+        check.isTrue("the notes so far go in", notesPrompt.contains("- Launch is Thursday."))
+        check.isTrue("and the new talk", notesPrompt.contains("<new transcript>\n[0:12] Karen: Hello.\n</new transcript>"))
+        check.isTrue("the first ask has no notes so far", !LiveNotesPrompt.user(previous: [], lines: ["x"]).contains("notes so far"))
+
+        var pacer = LiveNotesPacer()
+        let t0 = Date(timeIntervalSince1970: 1_790_000_000)
+        check.isTrue("a first ask once there is enough said", pacer.shouldAsk(newWords: 40, now: t0))
+        check.isTrue("not for a few words", !pacer.shouldAsk(newWords: 5, now: t0))
+        pacer.began(now: t0)
+        check.isTrue("not while one is out", !pacer.shouldAsk(newWords: 99, now: t0.addingTimeInterval(60)))
+        pacer.ended(succeeded: true)
+        check.isTrue("not again too soon", !pacer.shouldAsk(newWords: 99, now: t0.addingTimeInterval(20)))
+        check.isTrue("but after the interval", pacer.shouldAsk(newWords: 99, now: t0.addingTimeInterval(46)))
+        pacer.began(now: t0.addingTimeInterval(46))
+        pacer.ended(succeeded: false)
+        check.isTrue("a failure waits longer", !pacer.shouldAsk(newWords: 99, now: t0.addingTimeInterval(46 + 60)))
+        check.isTrue("then tries again", pacer.shouldAsk(newWords: 99, now: t0.addingTimeInterval(46 + 91)))
+        for _ in 0..<4 { pacer.began(now: t0); pacer.ended(succeeded: false) }
+        check.isTrue("and gives up for good after repeated failures", pacer.gaveUp && !pacer.shouldAsk(newWords: 99, now: t0.addingTimeInterval(99_999)))
+
+        // ── Asking about a meeting ───────────────────────────────────────────────
+        let asked = MeetingAsk.user(meeting: withChapters, question: "Who is Karen?")
+        check.isTrue("the question comes last", asked.hasSuffix("Question: Who is Karen?"))
+        check.isTrue("the transcript is there", asked.contains("[0:00] You: one two three"))
+        check.isTrue("and the summary", asked.contains("<summary>\nO.\n"))
+        var huge = Meeting(title: "Huge")
+        huge.utterances = (0..<400).map { Utterance(id: $0, speaker: $0 % 2 == 0 ? "you" : "s0", start: Double($0) * 10, end: Double($0) * 10 + 5, text: "line number \($0) has some words in it") }
+        let trimmedAsk = MeetingAsk.user(meeting: huge, question: "?", maxCharacters: 3_000)
+        check.isTrue("a long meeting is trimmed from the middle", trimmedAsk.contains("lines from the middle are left out"))
+        check.isTrue("the beginning stays", trimmedAsk.contains("line number 0 "))
+        check.isTrue("and the end", trimmedAsk.contains("line number 399 "))
+        check.isTrue("and it fits", trimmedAsk.count < 4_000)
+
         check.finish()
     }
 }

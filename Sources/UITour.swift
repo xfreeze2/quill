@@ -51,15 +51,16 @@ enum UITour {
                     return AnyView(RootView(model: model))
                 }
             }
-            page("home", .home)
-            page("history", .history)
-            page("meetings-summary", .meetings) { model.composingMeeting = false; model.selectedMeetingID = ids.roadmap }
+            page("meetings-summary", .meetings, height: 1280) { model.composingMeeting = false; model.selectedMeetingID = ids.roadmap }
+            page("meetings-people", .meetings) { model.composingMeeting = false; model.selectedMeetingID = ids.design }
             page("meetings-failed", .meetings) { model.selectedMeetingID = ids.coffee }
             page("meetings-new", .meetings) { model.composingMeeting = true }
-            page("vocabulary", .vocabulary, height: 900)
-            page("settings", .settings, height: 2300)
+            page("dictation-history", .dictation) { model.dictationTab = .history }
+            page("dictation-vocabulary", .dictation) { model.dictationTab = .vocabulary }
+            page("translation", .translate)
+            page("settings", .settings, height: 1500)
 
-            for (name, tab) in [("transcript", MeetingDetailView.Tab.transcript), ("notes", .notes)] {
+            for (name, tab) in [("transcript", MeetingDetailView.Tab.transcript), ("ask", .ask), ("notes", .notes)] {
                 shoot("meeting-\(name)-\(tag)", size: CGSize(width: 768, height: 720), dark: dark, folder: folder, steps: steps) {
                     model.composingMeeting = false
                     guard let meeting = model.meeting(ids.roadmap) else { return AnyView(EmptyView()) }
@@ -174,9 +175,15 @@ enum UITour {
             roadmap.utterances.append(Utterance(id: index, speaker: line.0, start: line.1, end: line.2, text: line.3))
         }
         roadmap.speakerNames = ["s0": "Karen", "s1": "Daniel"]
-        roadmap.endedAt = roadmap.createdAt.addingTimeInterval(1_680)
+        roadmap.endedAt = roadmap.createdAt.addingTimeInterval(118)
         roadmap.titleIsAutomatic = false
         roadmap.summaryState = .ready
+        roadmap.chapters = [
+            Chapter(title: "Search ranking is ready for beta", start: 10),
+            Chapter(title: "Mobile slips to January", start: 25),
+            Chapter(title: "Who owns the launch checklist", start: 59),
+            Chapter(title: "Announce at the conference, or the blog?", start: 80),
+        ]
         roadmap.userNotes = "Follow up with design about the mobile review.\nBlog post goes out before the conference."
         roadmap.summary = MeetingSummary(
             overview: "The team reviewed the Q4 roadmap. Search ranking is ready for beta, mobile is two weeks behind and moves to January, and the announcement waits for the blog post.",
@@ -270,6 +277,9 @@ enum UITour {
             out("UI TOUR: finished — \(meeting.utterances.count) remarks, voices \(meeting.speakers.map { meeting.name(for: $0) }), "
                 + "summary \(meeting.summaryState.rawValue), audio kept \(meeting.hasAudio), title “\(meeting.title)”")
             if let error = meeting.summaryError { out("UI TOUR: summary error — \(error)") }
+            out("UI TOUR: \(meeting.liveNotes.count) live notes, \(meeting.chapters.count) topics")
+            meeting.liveNotes.forEach { out("UI TOUR: note [\(Meeting.clock($0.time))] \($0.text)") }
+            meeting.chapters.forEach { out("UI TOUR: topic [\(Meeting.clock($0.start))] \($0.title)") }
             if let summary = meeting.summary {
                 out("UI TOUR: overview — \(summary.overview)")
                 summary.actionItems.forEach { out("UI TOUR: action [\($0.owner ?? "-")] \($0.task)") }

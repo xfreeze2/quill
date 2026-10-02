@@ -32,14 +32,14 @@ final class MainWindow: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1060, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 740),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
         window.title = "Quill"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 900, height: 600)
         window.delegate = self
@@ -66,10 +66,8 @@ struct RootView: View {
             Palette.canvas.ignoresSafeArea()
             HStack(spacing: 0) {
                 SidebarView(model: model)
-                    .frame(width: 228)
-                    .background(
-                        SidebarBackground().ignoresSafeArea()
-                    )
+                    .frame(width: 196)
+                    .background(SidebarBackground().ignoresSafeArea())
                 Rectangle().fill(Palette.hairline).frame(width: 1).ignoresSafeArea()
                 ZStack(alignment: .bottom) {
                     page
@@ -87,11 +85,10 @@ struct RootView: View {
 
     @ViewBuilder private var page: some View {
         switch model.section {
-        case .home:       HomeView(model: model)
-        case .history:    HistoryView(model: model)
-        case .meetings:   MeetingsView(model: model)
-        case .vocabulary: VocabularyView(model: model)
-        case .settings:   SettingsView(model: model)
+        case .meetings:  MeetingsView(model: model)
+        case .dictation: DictationView(model: model)
+        case .translate: TranslateView(model: model)
+        case .settings:  SettingsView(model: model)
         }
     }
 }
@@ -103,7 +100,7 @@ struct SidebarBackground: View {
 
     var body: some View {
         if Self.flat {
-            Palette.sunken.background(Palette.canvas)
+            Palette.panel
         } else {
             VisualEffect(material: .sidebar)
         }
@@ -118,9 +115,9 @@ struct ToastView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(.white)
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 9)
             .background(Capsule().fill(Color.black.opacity(0.82)))
-            .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 4)
     }
 }
 
@@ -128,79 +125,68 @@ struct ToastView: View {
 
 struct SidebarView: View {
     @ObservedObject var model: AppModel
-    @AppStorage(Defaults.trigger) private var triggerRaw = Trigger.control.rawValue
-    @AppStorage(Defaults.singleTap) private var singleTap = true
 
-    private var trigger: Trigger { Trigger(rawValue: triggerRaw) ?? .control }
-    private let top: [AppModel.Section] = [.home, .history, .meetings, .vocabulary]
+    private let top: [AppModel.Section] = [.meetings, .dictation, .translate]
+
+    /// The recording is already on screen, so the sidebar needn't repeat it.
+    private func watching(_ session: MeetingSession) -> Bool {
+        model.section == .meetings && !model.composingMeeting && model.selectedMeetingID == session.meeting.id
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                LogoMark(size: 26)
-                Text("Quill").font(.display(21))
-                Spacer()
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 18)
+            Spacer().frame(height: Layout.titlebar + 8)
 
             VStack(spacing: 2) {
                 ForEach(top) { section in
                     SidebarRow(section: section, isSelected: model.section == section,
-                               badge: section == .meetings && model.isRecordingMeeting) {
+                               badge: section == .translate && model.liveRunning ? Palette.positive : nil) {
                         model.open(section)
                     }
                 }
             }
-            .padding(.horizontal, 10)
 
             Spacer(minLength: 12)
 
-            if let session = model.session, session.isActive {
-                RecordingCard(model: model, session: session)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 10)
+            if let session = model.session, session.isActive, !watching(session) {
+                RecordingPill(model: model, session: session)
+                    .padding(.bottom, 8)
             }
 
-            DictateHint(trigger: trigger, singleTap: singleTap)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 10)
-
-            SidebarRow(section: .settings, isSelected: model.section == .settings, badge: !model.access.isComplete) {
+            SidebarRow(section: .settings, isSelected: model.section == .settings,
+                       badge: model.access.isComplete ? nil : Palette.caution) {
                 model.open(.settings)
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 14)
         }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 12)
     }
 }
 
 struct SidebarRow: View {
     var section: AppModel.Section
     var isSelected: Bool
-    var badge = false
+    var badge: Color? = nil
     var action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 11) {
+            HStack(spacing: 10) {
                 Image(systemName: section.symbol)
-                    .font(.system(size: 14.5, weight: .medium))
-                    .frame(width: 22)
-                    .foregroundColor(isSelected ? Palette.accent : .secondary)
+                    .font(.system(size: 13.5, weight: .regular))
+                    .frame(width: 20)
+                    .foregroundColor(isSelected ? .primary : .secondary)
                 Text(section.title)
-                    .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(isSelected ? Palette.accentText : .primary)
+                    .font(.system(size: 13.5, weight: isSelected ? .semibold : .regular))
                 Spacer()
-                if badge { Circle().fill(Palette.record).frame(width: 7, height: 7) }
+                if let badge { Circle().fill(badge).frame(width: 7, height: 7) }
             }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(isSelected ? Palette.accentSoft : (hovering ? Palette.hover : Color.clear))
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isSelected ? Palette.selected : (hovering ? Palette.hover : Color.clear))
             )
             .contentShape(Rectangle())
         }
@@ -209,78 +195,29 @@ struct SidebarRow: View {
     }
 }
 
-private struct DictateHint: View {
-    var trigger: Trigger
-    var singleTap: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "mic.fill").font(.system(size: 11, weight: .semibold)).foregroundColor(Palette.accent)
-                Text("Dictate anywhere").font(.system(size: 12, weight: .semibold))
-            }
-            HStack(spacing: 8) {
-                Keycap(text: trigger.shortTitle)
-                Text(trigger == .f5 ? "Press to start and stop" : (singleTap ? "Tap to start and stop" : "Double-tap to start and stop"))
-                    .font(.system(size: 11.5))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.surface.opacity(0.7)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
-    }
-}
-
-private struct RecordingCard: View {
+private struct RecordingPill: View {
     @ObservedObject var model: AppModel
     let session: MeetingSession
 
     var body: some View {
         let _ = model.tick
-        Button { model.openMeeting(session.meeting.id) } label: {
-            HStack(spacing: 10) {
-                PulsingDot()
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Recording").font(.system(size: 12, weight: .semibold))
-                    Text(Meeting.clock(session.elapsed))
-                        .font(.system(size: 12).monospacedDigit())
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Button { model.stopMeeting() } label: {
-                    Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Palette.record))
-                }
-                .buttonStyle(.plain)
-                .help("Stop and write up the notes")
+        HStack(spacing: 9) {
+            PulsingDot()
+            Text(Meeting.clock(session.elapsed))
+                .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+            Spacer()
+            Button { model.stopMeeting() } label: {
+                Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Palette.record))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.record.opacity(0.10)))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.record.opacity(0.25), lineWidth: 1))
+            .buttonStyle(.plain)
+            .help("Stop and write up the notes")
         }
-        .buttonStyle(.plain)
-    }
-}
-
-/// The nib mark used in the sidebar.
-struct LogoMark: View {
-    var size: CGFloat = 28
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.36, green: 0.38, blue: 0.95), Color(red: 0.55, green: 0.33, blue: 0.92)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-            Image(systemName: "waveform")
-                .font(.system(size: size * 0.5, weight: .semibold))
-                .foregroundColor(.white)
-        }
-        .frame(width: size, height: size)
-        .shadow(color: Color(red: 0.36, green: 0.38, blue: 0.95).opacity(0.35), radius: 4, x: 0, y: 2)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.record.opacity(0.10)))
+        .contentShape(Rectangle())
+        .onTapGesture { model.openMeeting(session.meeting.id) }
     }
 }

@@ -8,9 +8,10 @@ the end of what's already written, without touching your clipboard.
 **Double-tap it instead** and Quill translates whatever your Mac is playing — the other side of a
 call, a video — live, in a panel beside it. See [Live translation](#live-translation--double-tap-control).
 
-**Open the Quill window** and there's more: everything you've dictated, a **Notepad for meetings**
-that writes down who said what and summarises it when you're done, your own vocabulary and
-snippets, and every setting. See [The Quill window](#the-quill-window) and
+**Open the Quill window** and there's more: **meeting notes** that tell the voices apart, jot down
+what matters as the conversation moves, show who spoke when, and write up the decisions and action
+items when you're done — you can ask them questions afterwards. Plus everything you've dictated,
+your own vocabulary and snippets, and every setting. See [The Quill window](#the-quill-window) and
 [Meeting notes](#meeting-notes).
 
 Quill transcribes with **your existing Grok subscription**, so there's no API key to buy and
@@ -88,40 +89,51 @@ in the menu-bar menu, or just launch it. It shows in the Dock while the window i
 back to being quiet when you close it. A meeting you're recording carries on in the menu bar (the
 icon turns red).
 
+Three things to do, and settings:
+
 | | |
 |---|---|
-| **Home** | Start a dictation, a meeting or live translation; your words today, this week, your streak and speaking pace; the latest dictations and meetings. |
-| **Dictations** | Everything you've dictated, by day. Search, copy, put it back into the app you were in, delete one or all. |
-| **Meetings** | Your meeting notes — start one, watch it live, read the summary, transcript and your own notes afterwards. |
-| **Vocabulary** | Names and terms to spell your way, and **snippets** — say "my email", get the whole address. |
-| **Settings** | Every setting the menu has, plus your account, the permissions Quill needs, and where your data lives. |
+| **Meetings** | A list of your meetings beside the one you're reading. Start a new one, watch it live, then read the summary, the transcript, ask it questions, and keep your own notes. |
+| **Dictation** | **History** — everything you've dictated, by day, searchable. **Vocabulary** — names and terms to spell your way, and **shortcuts**: say "my email", get the whole address. |
+| **Translation** | Start live translation and choose the language, what to listen to, and whether it hides from screen sharing. |
+| **Settings** | Your account, the permissions that are still missing, and short sections for dictation, meetings and general. The rarely-touched options are under **Advanced**. |
 
-⌘1–⌘4 switch sections, ⌘, opens Settings, ⌘N opens a new meeting.
+⌘1–⌘3 switch sections, ⌘, opens Settings, ⌘N opens a new meeting.
 
-**Snippets.** Add a phrase and what it should become under **Vocabulary ▸ Snippets**. When a
-dictation is exactly that phrase — or contains it — Quill writes the expansion. Matching ignores
-case and the punctuation the transcriber puts around it, a phrase only matches whole words, and a
-longer phrase wins over a shorter one inside it. There's a **Try it** box right there. Expansion
-happens after grammar cleanup, so what you wrote is never reworded.
+**Shortcuts (snippets).** Add a phrase and what it should become under **Dictation ▸ Vocabulary**.
+When a dictation is exactly that phrase — or contains it — Quill writes the expansion. Matching
+ignores case and the punctuation the transcriber puts around it, a phrase only matches whole words,
+and a longer phrase wins over a shorter one inside it. Expansion happens after grammar cleanup, so
+what you wrote is never reworded.
 
 ## Meeting notes
 
-Open **Meetings ▸ +** (or **Start meeting notes** in the menu-bar menu) and pick what you're
+Open **Meetings** and press the new-meeting button, or ⌘N (or **Start meeting notes** in the menu-bar menu) and pick what you're
 capturing:
 
 - **A call on this Mac** — your microphone is *you*; everything the Mac plays is everyone else.
   Quill tells the other voices apart.
 - **People in the room** — one microphone, and Quill tells the voices apart.
 
-While it runs you see the notes appear line by line, with who is speaking — the voices are
-numbered at first (Speaker 1, Speaker 2…). The **My notes** pane beside it is yours: jot what
-matters, and it's kept with the meeting and used in the summary.
+While it runs, a strip across the top shows **who is in the conversation and who is talking right
+now**, with each person's share of the talk. Every minute or so Quill jots **live notes** — a few
+short lines on what was just discussed or decided — so you can see the shape of the meeting as it
+happens (turn this off under **Settings ▸ Meetings**). **Transcript** shows every line as it's said.
+The voices are numbered at first (Speaker 1, Speaker 2…). **Your notes** beside it is yours: jot
+what matters, and it's kept with the meeting and used in the summary.
 
-When you stop, Quill writes the **summary**: an overview, key points, decisions, **action items with
-owners**, and open questions. The title is filled in from what was said, unless you named it. If the
-summary spots a name in the conversation — "thanks, Daniel" — it offers it for that voice; you
-accept or ignore it. Rename a voice yourself any time by clicking its name; the transcript and
-summary follow. **Copy** or **Export** the whole thing as Markdown.
+When you stop, Quill writes the **summary**: an overview, **decisions**, **action items with
+owners** (tick them off), **topics** with the time each began, key points, and open questions. A
+**conversation map** shows each person's turns along the meeting's length with the topics marked on
+it — click anywhere on it to jump there (it plays the recording if you kept one, otherwise it takes
+you to that moment in the transcript). The title is filled in from what was said, unless you named
+it. If the summary spots a name in the conversation — "thanks, Daniel" — it offers it for that
+voice; you accept or ignore it. Rename a voice yourself any time by clicking its name; everything
+follows. **Copy notes** puts the summary on the clipboard; the **…** menu copies the transcript,
+exports Markdown, or writes the summary again.
+
+**Ask** answers questions from the meeting — "what did I agree to do?", "what's still
+unresolved?" — using only what was said, and can **draft a follow-up email**.
 
 **Sound is optional and off by default.** Switch on *Also keep the sound* for a meeting, or make it
 the default under **Settings ▸ Meetings** (which asks you to confirm). The recording is a compact
@@ -240,8 +252,8 @@ from the menu any time.
 
 ## Settings
 
-Everything below is also in the window's **Settings** screen. Or right-click the pill (or the
-menu-bar icon):
+Everything below is also in the window — **Settings**, with live translation's options on the
+**Translation** screen. Or right-click the pill (or the menu-bar icon):
 
 - **Trigger** — `Control`, right `⌘`, right `⌥`, `🌐`, or `F5`; single tap or double tap
 - **Click anywhere to insert** — the click-to-choose-destination gesture
@@ -312,7 +324,7 @@ back the same way. You cannot lose your words to this feature.
 
 ### Vocabulary & notes
 
-**Vocabulary** in the window — or Menu ▸ **Vocabulary & notes…** — is a small notepad for names, products and jargon the speech
+**Dictation ▸ Vocabulary** in the window — or Menu ▸ **Vocabulary & notes…** — is a small notepad for names, products and jargon the speech
 service tends to mishear — one per line, or a line about what you work on. When cleanup is on,
 it's sent along so a misheard word is written your way:
 

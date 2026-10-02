@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// A meeting in progress: the words arriving, your own notes beside them, and
-/// the way to stop.
+/// A meeting in progress. Quill is listening: it tells you who is talking,
+/// writes the notes as the conversation moves, and leaves you a place of your own.
 struct LiveMeetingView: View {
     @ObservedObject var model: AppModel
     let session: MeetingSession
     @State private var title: String
     @State private var notes: String
+    @State private var showTranscript = false
     @State private var follow = true
     @FocusState private var titleFocused: Bool
 
@@ -19,21 +20,34 @@ struct LiveMeetingView: View {
 
     private var meeting: Meeting { session.meeting }
     private var stopping: Bool { session.phase == .stopping }
+    private var notesAreOn: Bool { Defaults.bool(Defaults.meetingLiveNotes) }
 
     var body: some View {
         let _ = model.tick
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 18) {
             header
             ForEach(session.notices.keys.sorted(), id: \.self) { key in
                 if let text = session.notices[key], !text.isEmpty { Notice(text: text) }
             }
-            HStack(alignment: .top, spacing: 16) {
-                transcript
-                notesCard.frame(width: 290)
+            LiveSpeakers(meeting: meeting, speaking: session.live.map(\.speaker))
+            GeometryReader { geo in
+                if geo.size.width >= 760 {
+                    HStack(alignment: .top, spacing: 32) {
+                        main
+                        yourNotes.frame(width: 270)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                } else {
+                    VStack(alignment: .leading, spacing: 14) {
+                        main
+                        yourNotes.frame(height: 124)
+                    }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                }
             }
         }
-        .padding(.horizontal, 32)
-        .padding(.top, 22)
+        .padding(.horizontal, 40)
+        .padding(.top, Layout.titlebar - 4)
         .padding(.bottom, 26)
     }
 
@@ -45,41 +59,48 @@ struct LiveMeetingView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                if stopping { ProgressView().controlSize(.small) } else { PulsingDot() }
                 TextField("Meeting title", text: $title, onCommit: commitTitle)
                     .textFieldStyle(.plain)
-                    .font(.display(27))
+                    .font(.system(size: 28, weight: .bold))
                     .focused($titleFocused)
                     .onChange(of: titleFocused) { if !$0 { commitTitle() } }
-                Spacer(minLength: 12)
                 stopButton
             }
-            HStack(spacing: 10) {
-                Chip(text: Meeting.clock(session.elapsed), symbol: "clock", tint: Palette.record)
-                Chip(text: meeting.capture.title, symbol: meeting.capture == .call ? "video" : "person.3")
-                if session.keepsAudio { Chip(text: "Recording sound", symbol: "record.circle", tint: Palette.record) }
+            HStack(spacing: 8) {
+                if stopping { ProgressView().controlSize(.small) } else { PulsingDot() }
+                Text(Meeting.clock(session.elapsed))
+                    .font(.system(size: 13, weight: .medium).monospacedDigit())
+                    .foregroundColor(stopping ? .secondary : Palette.record)
+                Text(detailLine).font(.system(size: 13)).foregroundColor(.secondary)
                 Spacer(minLength: 0)
                 meters
             }
         }
     }
 
+    private var detailLine: String {
+        var parts = ["·", meeting.capture.title]
+        if session.keepsAudio { parts.append("· Recording sound") }
+        return parts.joined(separator: " ")
+    }
+
     private var stopButton: some View {
         Button { model.stopMeeting() } label: {
-            HStack(spacing: 8) {
-                if stopping { ProgressView().controlSize(.small) } else { Image(systemName: "stop.fill").font(.system(size: 11, weight: .bold)) }
-                Text(stopping ? "Finishing…" : "Stop & summarise")
+            HStack(spacing: 7) {
+                if stopping { ProgressView().controlSize(.small) } else { Image(systemName: "stop.fill").font(.system(size: 10, weight: .bold)) }
+                Text(stopping ? "Finishing…" : "Stop")
             }
         }
         .buttonStyle(PrimaryButtonStyle(tint: Palette.record))
         .disabled(stopping)
         .keyboardShortcut(.return, modifiers: [.command])
+        .help("Stop and write up the notes  ⌘↩")
     }
 
     private var meters: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 14) {
             meter(label: meeting.capture == .call ? "You" : "Room", level: session.micLevel)
             if meeting.capture == .call, session.notices["call"] == nil || session.systemLevel > 0 {
                 meter(label: "Others", level: session.systemLevel)
@@ -88,25 +109,23 @@ struct LiveMeetingView: View {
     }
 
     private func meter(label: String, level: Float) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             TimelineView(.periodic(from: .now, by: 0.12)) { _ in
                 LevelBars(level: label == "Others" ? session.systemLevel : session.micLevel)
             }
-            Text(label).font(.system(size: 12, weight: .medium)).foregroundColor(.secondary)
+            Text(label).font(.system(size: 12)).foregroundColor(.secondary)
         }
     }
 
-    // MARK: Transcript
+    // MARK: Main pane
 
-    private var transcript: some View {
-        let turns = meeting.turns()
-        let live = session.live
-        let signature = "\(turns.count)-\(turns.last?.text.count ?? 0)-\(live.map(\.text.count))"
-        return Card(padding: 0) {
-            VStack(spacing: 0) {
-                HStack {
-                    SectionLabel(text: "Transcript")
-                    Spacer()
+    private var main: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                TabStrip(tabs: [false, true], selection: $showTranscript) { $0 ? "Transcript" : "Notes" }
+                    .frame(maxWidth: 190)
+                Spacer()
+                if showTranscript {
                     Button { follow.toggle() } label: {
                         HStack(spacing: 5) {
                             Image(systemName: follow ? "arrow.down.to.line" : "pause")
@@ -116,63 +135,104 @@ struct LiveMeetingView: View {
                     .buttonStyle(GhostButtonStyle(tint: follow ? Palette.accentText : nil))
                     .help("Scroll along as people speak")
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-
-                if turns.isEmpty && live.isEmpty {
-                    VStack(spacing: 12) {
-                        Spacer()
-                        LevelBars(level: max(session.micLevel, session.systemLevel))
-                        Text(stopping ? "Finishing up…" : "Listening…").font(.display(18))
-                        Text("Start talking, and the words appear here with who said them.")
-                            .font(.system(size: 12.5)).foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 14) {
-                                ForEach(turns) { turn in
-                                    TurnRow(meeting: meeting, turn: turn)
-                                        .id(turn.id)
-                                }
-                                ForEach(Array(live.enumerated()), id: \.offset) { _, line in
-                                    LiveTurnRow(meeting: meeting, line: line)
-                                }
-                                Color.clear.frame(height: 1).id("end")
-                            }
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 12)
-                        }
-                        .onChange(of: signature) { _ in
-                            guard follow else { return }
-                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
-                        }
-                    }
-                }
             }
+            if showTranscript { transcript } else { liveNotes }
+            nowSaying
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: Notes
-
-    private var notesCard: some View {
-        Card(padding: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel(text: "My notes")
-                    .padding(.top, 12)
-                Text("Jot what matters. It's kept with the meeting and used in the summary.")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                NotesEditor(text: $notes, placeholder: "Decisions, names, things to follow up…",
-                            onChange: { model.setNotes(meeting.id, $0) })
-                    .padding(.top, 4)
+    private var liveNotes: some View {
+        let items = meeting.liveNotes
+        return ScrollViewReader { proxy in
+            ScrollView {
+                if items.isEmpty {
+                    VStack(spacing: 8) {
+                        LevelBars(level: max(session.micLevel, session.systemLevel))
+                        Text(stopping ? "Finishing up…" : "Listening…").font(.system(size: 15, weight: .semibold))
+                        Text(notesAreOn
+                             ? "Notes appear here as the conversation moves."
+                             : "Live notes are off. The transcript is still being kept.")
+                            .font(.system(size: 13)).foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 70)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(items) { note in
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                Text(Meeting.clock(note.time)).font(.system(size: 11.5).monospacedDigit())
+                                    .foregroundColor(.secondary).frame(width: 38, alignment: .trailing)
+                                Text(note.text).font(.system(size: 15)).lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .id(note.id)
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+                        Color.clear.frame(height: 1).id("end")
+                    }
+                    .padding(.vertical, 16)
+                    .animation(.easeOut(duration: 0.3), value: items.count)
+                }
             }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 12)
+            .onChange(of: items.count) { _ in
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("end", anchor: .bottom) }
+            }
+        }
+    }
+
+    private var transcript: some View {
+        let turns = meeting.turns()
+        let live = session.live
+        let signature = "\(turns.count)-\(turns.last?.text.count ?? 0)-\(live.map(\.text.count))"
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(turns) { turn in
+                        TurnRow(meeting: meeting, turn: turn).id(turn.id)
+                    }
+                    ForEach(Array(live.enumerated()), id: \.offset) { _, line in
+                        LiveTurnRow(meeting: meeting, line: line)
+                    }
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .padding(.vertical, 16)
+                .padding(.horizontal, 10)
+            }
+            .onChange(of: signature) { _ in
+                guard follow else { return }
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("end", anchor: .bottom) }
+            }
+        }
+    }
+
+    /// The words being said this moment, so you can see it is hearing.
+    @ViewBuilder private var nowSaying: some View {
+        if !showTranscript, let line = session.live.last {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(meeting.name(for: line.speaker))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Palette.voice(line.speaker))
+                Text(line.text).font(.system(size: 13)).foregroundColor(.secondary).lineLimit(2)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.sunken))
+        }
+    }
+
+    // MARK: Your notes
+
+    private var yourNotes: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(text: "Your notes")
+                .padding(.top, 4)
+            NotesEditor(text: $notes, placeholder: "Jot anything down. It's kept with the meeting.",
+                        onChange: { model.setNotes(meeting.id, $0) })
+                .padding(14)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.sunken))
         }
         .frame(maxHeight: .infinity)
     }

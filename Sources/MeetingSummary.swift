@@ -19,11 +19,14 @@ enum SummaryPrompt {
       "decisions": ["things the group agreed or settled"],
       "actionItems": [{"owner": "the person's name exactly as written in the transcript (\"You\" for the person who made the recording), or null if nobody was given the task", "task": "what must be done, and by when if said"}],
       "openQuestions": ["things raised and left unresolved"],
+      "chapters": [{"title": "two to five words naming the topic", "start": "the [m:ss] time, copied from the transcript, where the topic begins"}],
       "speakers": {"Speaker 2": "Daniel"}
     }
 
     Rules:
     - Use only what was said. Never invent facts, names, dates or tasks. Use [] for a list with nothing in it.
+    - "chapters" follow the conversation in order: none for a short exchange, three to eight for a long meeting. \
+    Each start time must be one that appears in the transcript.
     - "speakers" maps a label from the transcript to a real name, and only when the conversation makes it \
     certain — for instance someone is addressed by name and then answers, or introduces themselves. Otherwise leave it empty.
     - Write in the language the meeting was held in.
@@ -45,7 +48,8 @@ enum SummaryPrompt {
     You are given notes made from consecutive parts of one long meeting. Combine them into a single set of \
     notes for the whole meeting: merge duplicates, keep every distinct decision and action item, and keep the \
     order of events. Reply with ONLY a JSON object with exactly the same keys as the parts \
-    (title, overview, keyPoints, decisions, actionItems, openQuestions, speakers). Never invent anything.
+    (title, overview, keyPoints, decisions, actionItems, openQuestions, chapters, speakers). Keep each chapter's \
+    start time as written. Never invent anything.
     """
 
     /// Transcript lines grouped so that no group is far longer than `maxCharacters`,
@@ -73,6 +77,7 @@ struct ParsedSummary: Equatable {
     var summary: MeetingSummary
     /// Label as written in the transcript ("Speaker 2") → the name found.
     var speakers: [String: String]
+    var chapters: [Chapter] = []
 }
 
 enum SummaryParser {
@@ -100,7 +105,32 @@ enum SummaryParser {
         }
         let title = text(object["title"]).map { String($0.prefix(80)) }
         guard !summary.isEmpty || title != nil else { return nil }
-        return ParsedSummary(title: title, summary: summary, speakers: speakers)
+        return ParsedSummary(title: title, summary: summary, speakers: speakers, chapters: chapters(object["chapters"]))
+    }
+
+    /// Topics with the time they begin, in order. A time may arrive as "12:03",
+    /// "1:02:03", "[12:03]" or a number of seconds.
+    static func chapters(_ value: Any?) -> [Chapter] {
+        guard let array = value as? [Any] else { return [] }
+        var found: [Chapter] = []
+        for item in array {
+            guard let dictionary = item as? [String: Any],
+                  let title = text(dictionary["title"]) ?? text(dictionary["name"]) ?? text(dictionary["topic"]),
+                  let start = seconds(dictionary["start"] ?? dictionary["time"] ?? dictionary["at"]) else { continue }
+            found.append(Chapter(title: String(stripBullet(title).prefix(70)), start: start))
+        }
+        found.sort { $0.start < $1.start }
+        var seen = Set<Int>()
+        return Array(found.filter { seen.insert(Int($0.start)).inserted }.prefix(12))
+    }
+
+    static func seconds(_ value: Any?) -> Double? {
+        if let number = value as? Double { return number >= 0 ? number : nil }
+        guard var string = text(value) else { return nil }
+        string = string.trimmingCharacters(in: CharacterSet(charactersIn: "[]() "))
+        let parts = string.split(separator: ":").map { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard (1...3).contains(parts.count), parts.allSatisfy({ $0 != nil && $0! >= 0 }) else { return nil }
+        return parts.compactMap { $0 }.reduce(0) { $0 * 60 + $1 }
     }
 
     /// Combines the parts of a long meeting when the model could not.
@@ -113,6 +143,7 @@ enum SummaryParser {
             merged.summary.decisions += part.summary.decisions
             merged.summary.actionItems += part.summary.actionItems
             merged.summary.openQuestions += part.summary.openQuestions
+            merged.chapters += part.chapters
             merged.speakers.merge(part.speakers) { current, _ in current }
         }
         return merged

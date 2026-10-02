@@ -6,8 +6,8 @@ struct MeetingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             MeetingList(model: model)
-                .frame(width: 292)
-            Rectangle().fill(Palette.hairline).frame(width: 1)
+                .frame(width: 280)
+            Rectangle().fill(Palette.hairline).frame(width: 1).ignoresSafeArea()
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -35,9 +35,7 @@ struct MeetingsView: View {
             MeetingDetailView(model: model, meeting: meeting)
                 .id(id)
         } else {
-            EmptyState(symbol: "person.2.wave.2", title: "Pick a meeting",
-                       message: "Choose one from the list, or start a new one.",
-                       actionTitle: "New meeting", action: { model.newMeeting() })
+            NewMeetingView(model: model)
         }
     }
 }
@@ -45,28 +43,13 @@ struct MeetingsView: View {
 // MARK: - List
 
 enum MeetingRow {
-    static func subtitle(_ meeting: Meeting) -> String {
-        var parts = [Formatting.shortDate(meeting.createdAt)]
+    static func subtitle(_ meeting: Meeting, live: Bool) -> String {
+        if live { return "Recording" }
+        var parts = [Formatting.time(meeting.createdAt)]
         if meeting.isFinished, meeting.duration >= 1 { parts.append(Meeting.describe(duration: meeting.duration)) }
-        else if !meeting.isFinished { parts.append("Recording") }
         let people = meeting.speakers.count
         if people > 1 { parts.append("\(people) people") }
         return parts.joined(separator: " · ")
-    }
-}
-
-struct MeetingGlyph: View {
-    var meeting: Meeting
-    var live: Bool
-
-    var body: some View {
-        let symbol = live ? "waveform" : (meeting.summary == nil ? "text.alignleft" : "doc.text")
-        let tint = live ? Palette.record : Palette.accent
-        ZStack {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tint.opacity(0.13))
-            Image(systemName: symbol).font(.system(size: 13.5, weight: .semibold)).foregroundColor(tint)
-        }
-        .frame(width: 34, height: 34)
     }
 }
 
@@ -94,53 +77,64 @@ private struct MeetingList: View {
         }
     }
 
+    private var groups: [(day: Date, meetings: [Meeting])] {
+        let calendar = Calendar.current
+        var order: [Date] = []
+        var buckets: [Date: [Meeting]] = [:]
+        for meeting in filtered {
+            let day = calendar.startOfDay(for: meeting.createdAt)
+            if buckets[day] == nil { order.append(day) }
+            buckets[day, default: []].append(meeting)
+        }
+        return order.map { ($0, buckets[$0] ?? []) }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Meetings").font(.display(24))
+                Text("Meetings").font(.system(size: 20, weight: .semibold))
                 Spacer()
-                Button { model.newMeeting() } label: {
-                    Image(systemName: "plus").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Palette.accent))
-                }
-                .buttonStyle(.plain)
-                .help("New meeting")
+                Button { model.newMeeting() } label: { Image(systemName: "square.and.pencil") }
+                    .buttonStyle(IconButtonStyle())
+                    .help("New meeting  ⌘N")
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 22)
+            .padding(.horizontal, 16)
+            .padding(.top, Layout.titlebar)
             .padding(.bottom, 12)
 
-            SearchBox(text: $query, prompt: "Search meetings")
-                .padding(.horizontal, 14)
-                .padding(.bottom, 10)
+            SearchBox(text: $query, prompt: "Search")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
 
             if all.isEmpty {
-                VStack(spacing: 8) {
-                    Spacer()
-                    Text("No meetings yet").font(.system(size: 13, weight: .medium))
-                    Text("They'll be listed here once you've taken some notes.")
-                        .font(.system(size: 12)).foregroundColor(.secondary).multilineTextAlignment(.center)
-                    Spacer()
-                }
-                .padding(.horizontal, 24)
-                .frame(maxWidth: .infinity)
-            } else if filtered.isEmpty {
-                VStack { Spacer(); Text("No matches").font(.system(size: 13)).foregroundColor(.secondary); Spacer() }
+                Spacer()
+                Text("No meetings yet")
+                    .font(.system(size: 13)).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity)
+                Spacer()
+            } else if filtered.isEmpty {
+                Spacer()
+                Text("No matches").font(.system(size: 13)).foregroundColor(.secondary).frame(maxWidth: .infinity)
+                Spacer()
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 3) {
-                        ForEach(filtered) { meeting in
-                            row(meeting)
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(groups, id: \.day) { group in
+                            Text(Formatting.day(group.day))
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                            ForEach(group.meetings) { meeting in row(meeting) }
                         }
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 8)
                     .padding(.bottom, 14)
                 }
             }
         }
-        .background(Palette.canvas)
+        .background(Palette.panel.ignoresSafeArea())
         .alert("Delete this meeting?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
             Button("Delete", role: .destructive) {
                 if let meeting = pendingDelete { model.deleteMeeting(meeting.id) }
@@ -160,7 +154,7 @@ private struct MeetingList: View {
         }
         .contextMenu {
             Button("Copy as Markdown") {
-                model.copy(MeetingMarkdown.render(shown), message: "Meeting copied as Markdown")
+                model.copy(MeetingMarkdown.render(shown), message: "Copied")
             }
             Divider()
             Button("Delete…") { pendingDelete = meeting }
@@ -176,21 +170,28 @@ private struct MeetingListRow: View {
     var action: () -> Void
     @State private var hovering = false
 
+    private var problem: Bool { !live && meeting.summaryState == .failed }
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 11) {
-                MeetingGlyph(meeting: meeting, live: live)
+            HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(meeting.title).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
-                        .foregroundColor(selected ? Palette.accentText : .primary)
-                    Text(MeetingRow.subtitle(meeting)).font(.system(size: 11.5)).foregroundColor(.secondary).lineLimit(1)
+                    Text(meeting.title)
+                        .font(.system(size: 13.5, weight: .medium))
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+                    Text(problem ? "Summary didn't finish" : MeetingRow.subtitle(meeting, live: live))
+                        .font(.system(size: 12))
+                        .foregroundColor(live ? Palette.record : (problem ? Palette.caution : .secondary))
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                if live { PulsingDot(size: 7) }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(selected ? Palette.accentSoft : (hovering ? Palette.hover : Color.clear)))
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(selected ? Palette.selected : (hovering ? Palette.hover : Color.clear)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -210,144 +211,101 @@ struct NewMeetingView: View {
     private var capture: MeetingCapture { MeetingCapture(rawValue: captureRaw) ?? .call }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            Spacer(minLength: 24)
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("New meeting").font(.display(30))
-                    Text("Quill listens, writes down who said what, and summarises it when you're done.")
+                    Text("New meeting").font(.system(size: 26, weight: .semibold))
+                    Text("Quill listens, tells the voices apart, and writes the notes as you go.")
                         .font(.system(size: 14)).foregroundColor(.secondary)
                 }
 
-                HStack(alignment: .top, spacing: 14) {
-                    CaptureTile(symbol: "video", title: "Call on this Mac",
-                                message: "Zoom, Meet, Teams, FaceTime… Your microphone is you; everything the Mac plays is everyone else.",
-                                selected: capture == .call) { captureRaw = MeetingCapture.call.rawValue }
-                    CaptureTile(symbol: "person.3", title: "In the room",
-                                message: "A meeting in person. One microphone hears the room, and Quill tells the voices apart.",
-                                selected: capture == .room) { captureRaw = MeetingCapture.room.rawValue }
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("", selection: Binding(get: { capture }, set: { captureRaw = $0.rawValue })) {
+                        Text("Call on this Mac").tag(MeetingCapture.call)
+                        Text("In the room").tag(MeetingCapture.room)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    Text(capture == .call
+                         ? "Zoom, Meet, Teams, FaceTime. Your microphone is you; what the Mac plays is everyone else."
+                         : "People together in one place. One microphone hears the room.")
+                        .font(.system(size: 12.5)).foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if capture == .call, SystemAudioPermission.isSupported, model.access.systemAudio == .denied {
-                    notice(symbol: "speaker.slash", text: "Quill can't hear your Mac's audio yet, so the other side of a call would be missing.",
-                           button: "Allow…") { SystemAudioPermission.openSettings() }
-                } else if capture == .call, !SystemAudioPermission.isSupported {
-                    notice(symbol: "exclamationmark.triangle", text: "Hearing the other side of a call needs macOS 14.2 or newer. Quill will listen to the microphone only.", button: nil) {}
-                }
-                if model.access.account == nil {
-                    notice(symbol: "key", text: "Quill needs a Grok sign-in or an xAI API key to turn speech into text.",
-                           button: "Set up…") { model.bridge.openSetup() }
-                }
-                if capture == .call {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "headphones").font(.system(size: 12)).foregroundColor(.secondary)
-                        Text("Headphones keep your own line clean. On speakers, your microphone also hears the call.")
+                Toggle(isOn: Binding(get: { keepAudio }, set: { on in
+                    if on { askConsent = true } else { keepAudio = false }
+                })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Keep the recording").font(.system(size: 13.5))
+                        Text("Saved on this Mac only, so you can listen back. Off unless you turn it on.")
                             .font(.system(size: 12)).foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .toggleStyle(.switch)
 
-                Card(padding: 4) {
-                    VStack(spacing: 0) {
-                        SettingRow("Also keep the sound",
-                                   detail: "Saves a recording on this Mac only, so you can replay any moment. Off unless you turn it on.") {
-                            Toggle("", isOn: Binding(get: { keepAudio }, set: { on in
-                                if on { askConsent = true } else { keepAudio = false }
-                            }))
-                            .toggleStyle(.switch).labelsHidden()
-                        }
-                        .padding(.horizontal, 14)
-                        RowDivider().padding(.horizontal, 14)
-                        SettingRow("Language", detail: "Leave on auto-detect unless the meeting is in one language only.") {
-                            Picker("", selection: $language) {
-                                ForEach(Languages.all, id: \.1) { Text($0.0).tag($0.1) }
-                            }
-                            .labelsHidden()
-                            .frame(width: 150)
-                        }
-                        .padding(.horizontal, 14)
-                    }
-                }
+                notices
 
                 HStack(spacing: 14) {
                     Button { model.startMeeting(capture: capture, keepAudio: keepAudio, language: language) } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "record.circle")
-                            Text("Start meeting")
+                            Text("Start")
                         }
-                        .font(.system(size: 14, weight: .semibold))
-                        .padding(.horizontal, 6)
                     }
-                    .buttonStyle(PrimaryButtonStyle())
+                    .buttonStyle(PrimaryButtonStyle(large: true))
                     .keyboardShortcut(.return, modifiers: [.command])
-
-                    Text(keepAudio ? "The sound will be kept as well as the words." : "Only the words will be kept.")
-                        .font(.system(size: 12.5)).foregroundColor(.secondary)
+                    Text("⌘↩").font(.system(size: 12)).foregroundColor(.secondary)
+                    Spacer()
                 }
 
-                Text("Tell people they're being recorded. Laws about recording conversations vary, and some require everyone's agreement.")
-                    .font(.system(size: 12)).foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if keepAudio {
+                    Text("Tell people they're being recorded. Laws about recording conversations vary, and some require everyone's agreement.")
+                        .font(.system(size: 12)).foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(.horizontal, 44)
-            .padding(.vertical, 34)
-            .frame(maxWidth: 700, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: 420, alignment: .leading)
+            .padding(.horizontal, 40)
+            Spacer(minLength: 24)
+            Spacer(minLength: 24)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .alert("Keep a recording of this meeting?", isPresented: $askConsent) {
             Button("Keep Recording") { keepAudio = true }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Quill will save the sound of the meeting on this Mac, and only here. Make sure everyone taking part knows and agrees. You can delete the recording at any time, and keep the transcript.")
+            Text("Quill will save the sound of the meeting on this Mac, and only here. Make sure everyone taking part knows and agrees. You can delete the recording at any time and keep the transcript.")
         }
     }
 
-    private func notice(symbol: String, text: String, button: String?, action: @escaping () -> Void) -> some View {
+    @ViewBuilder private var notices: some View {
+        if model.access.account == nil {
+            notice("Quill needs a Grok sign-in or an xAI API key to turn speech into text.", button: "Set up…") {
+                model.bridge.openSetup()
+            }
+        } else if capture == .call, SystemAudioPermission.isSupported, model.access.systemAudio == .denied {
+            notice("Quill can't hear your Mac's audio yet, so the other side of a call would be missing.", button: "Allow…") {
+                SystemAudioPermission.openSettings()
+            }
+        } else if capture == .call, !SystemAudioPermission.isSupported {
+            notice("Hearing the other side of a call needs macOS 14.2 or newer. Quill will listen to the microphone only.", button: nil) {}
+        } else if capture == .call {
+            Text("Headphones keep your own line clean. On speakers, your microphone also hears the call.")
+                .font(.system(size: 12)).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func notice(_ text: String, button: String?, action: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: 15)).foregroundColor(Palette.caution)
             Text(text).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             if let button { Button(button, action: action).buttonStyle(SecondaryButtonStyle()) }
         }
-        .padding(13)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.caution.opacity(0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.caution.opacity(0.28), lineWidth: 1))
-    }
-}
-
-private struct CaptureTile: View {
-    var symbol: String
-    var title: String
-    var message: String
-    var selected: Bool
-    var action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Image(systemName: symbol).font(.system(size: 18, weight: .medium))
-                        .foregroundColor(selected ? Palette.accent : .secondary)
-                    Spacer()
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 17))
-                        .foregroundColor(selected ? Palette.accent : Palette.hairline)
-                }
-                Text(title).font(.system(size: 14.5, weight: .semibold))
-                Text(message).font(.system(size: 12.5)).foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 142, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(selected ? Palette.accentSoft : Palette.surface))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(selected ? Palette.accent.opacity(0.7) : (hovering ? Palette.hairline.opacity(2) : Palette.hairline),
-                        lineWidth: selected ? 1.5 : 1))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.caution.opacity(0.10)))
     }
 }
