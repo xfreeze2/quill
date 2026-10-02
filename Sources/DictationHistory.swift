@@ -22,6 +22,8 @@ struct DictationStats: Equatable {
     var words = 0
     var wordsToday = 0
     var wordsThisWeek = 0
+    /// Words per day for the last seven days, oldest first; the last is today.
+    var lastSevenDays = [Int](repeating: 0, count: 7)
     /// Consecutive days, ending today or yesterday, with at least one dictation.
     var streakDays = 0
     /// Words per minute across the dictations whose length is known.
@@ -110,7 +112,12 @@ final class DictationHistory {
             let day = calendar.startOfDay(for: entry.date)
             days.insert(day)
             if day >= startOfToday { stats.wordsToday += words }
-            if day >= weekAgo { stats.wordsThisWeek += words }
+            if day >= weekAgo {
+                stats.wordsThisWeek += words
+                if let back = calendar.dateComponents([.day], from: day, to: startOfToday).day, (0...6).contains(back) {
+                    stats.lastSevenDays[6 - back] += words
+                }
+            }
             if let seconds = entry.seconds, seconds >= 1 {
                 timedWords += words
                 timedSeconds += seconds

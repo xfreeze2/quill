@@ -47,11 +47,9 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 34) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Settings").font(.system(size: 22, weight: .semibold))
-                    Text("Quill \(Build.version)").font(.system(size: 13)).foregroundColor(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 22) {
+                PageHeader(symbol: "gearshape.fill", tile: .slate, title: "Settings",
+                           subtitle: "Quill \(Build.version)")
                 account
                 permissions
                 dictation
@@ -63,9 +61,10 @@ struct SettingsView: View {
             .padding(.horizontal, 40)
             .padding(.top, Layout.titlebar - 4)
             .padding(.bottom, 48)
-            .frame(maxWidth: 660, alignment: .leading)
+            .frame(maxWidth: 700, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
+        .background(PageGround(tint: .slate))
         .alert("Keep a recording of every meeting?", isPresented: $askAudioConsent) {
             Button("Keep Recordings") { meetingKeepAudio = true }
             Button("Cancel", role: .cancel) {}
@@ -82,11 +81,22 @@ struct SettingsView: View {
 
     // MARK: Building blocks
 
-    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 15, weight: .semibold)).padding(.bottom, 6)
-            RowDivider()
-            content()
+    private func heading(_ title: String, _ symbol: String, _ tile: Tile) -> some View {
+        HStack(spacing: 9) {
+            IconTile(symbol: symbol, tile: tile, size: 22)
+            Text(title).font(.system(size: 14, weight: .semibold))
+        }
+        .padding(.leading, 2)
+    }
+
+    private func group<Content: View>(_ title: String, _ symbol: String, _ tile: Tile,
+                                      @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            heading(title, symbol, tile)
+            Panel(padding: 0) {
+                VStack(spacing: 0) { content() }
+                    .padding(.horizontal, 16)
+            }
         }
     }
 
@@ -95,16 +105,14 @@ struct SettingsView: View {
     }
 
     private func row<Control: View>(_ title: String, detail: String? = nil, @ViewBuilder control: () -> Control) -> some View {
-        VStack(spacing: 0) {
-            SettingRow(title, detail: detail, control: control)
-            RowDivider()
-        }
+        SettingRow(title, detail: detail, control: control)
+            .overlay(alignment: .bottom) { RowDivider() }
     }
 
     // MARK: Sections
 
     private var account: some View {
-        group("Account") {
+        group("Account", "person.crop.circle.fill", .sky) {
             row(model.access.account ?? "Not signed in",
                 detail: model.access.account == nil
                 ? "Quill uses your Grok subscription, or your own xAI API key, to turn speech into text."
@@ -128,7 +136,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var permissions: some View {
-        group("Permissions") {
+        group("Permissions", "checkmark.shield.fill", missingPermissions ? .amber : .green) {
             if !missingPermissions {
                 row("Everything Quill needs is allowed") {
                     Image(systemName: "checkmark.circle.fill").foregroundColor(Palette.positive)
@@ -172,7 +180,7 @@ struct SettingsView: View {
     }
 
     private var dictation: some View {
-        group("Dictation") {
+        group("Dictation", "mic.fill", .coral) {
             row("Language") {
                 Picker("", selection: $language) {
                     ForEach(Languages.all, id: \.1) { Text($0.0).tag($0.1) }
@@ -205,7 +213,7 @@ struct SettingsView: View {
     }
 
     private var meetings: some View {
-        group("Meetings") {
+        group("Meetings", "person.2.wave.2", .indigo) {
             row("Usually capture") {
                 Picker("", selection: $meetingCapture) {
                     Text("A call on this Mac").tag(MeetingCapture.call.rawValue)
@@ -234,7 +242,7 @@ struct SettingsView: View {
     }
 
     private var general: some View {
-        group("General") {
+        group("General", "gearshape.fill", .slate) {
             row("Start Quill at login") {
                 toggle(Binding(get: { startAtLogin }, set: { on in
                     LoginItem.setEnabled(on)
@@ -254,10 +262,10 @@ struct SettingsView: View {
     }
 
     private var advanced: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 9) {
             Button { withAnimation(.easeOut(duration: 0.18)) { showAdvanced.toggle() } } label: {
-                HStack(spacing: 7) {
-                    Text("Advanced").font(.system(size: 15, weight: .semibold))
+                HStack(spacing: 9) {
+                    heading("Advanced", "slider.horizontal.3", .slate)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10.5, weight: .bold))
                         .foregroundColor(.secondary)
@@ -267,37 +275,40 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 6)
-            RowDivider()
             if showAdvanced {
-                row("Single tap", detail: "A tap only counts if nothing else is pressed with it, so shortcuts like ⌃C never trigger it. Off means double-tap.") {
-                    toggle($singleTap)
-                }
-                row("Stop when I say “that's it”", detail: "Say “that's it” or “that's all” to finish hands-free.") {
-                    toggle($stopPhrase)
-                }
-                row("Click anywhere to insert", detail: "Click into a field while dictating and the words go there.") {
-                    toggle($clickToInsert)
-                }
-                row("Insert at end of field", detail: "Add to what's already there instead of replacing the selection.") {
-                    toggle($insertAtEnd)
-                }
-                row("Show the idle pill", detail: "The small button at the edge of the screen.") {
-                    HStack(spacing: 10) {
-                        if cornerButton { Button("Reset position") { model.bridge.resetPanelPosition() }.buttonStyle(GhostButtonStyle()) }
-                        toggle($cornerButton)
+            Panel(padding: 0) {
+                VStack(spacing: 0) {
+                    row("Single tap", detail: "A tap only counts if nothing else is pressed with it, so shortcuts like ⌃C never trigger it. Off means double-tap.") {
+                        toggle($singleTap)
+                    }
+                    row("Stop when I say “that's it”", detail: "Say “that's it” or “that's all” to finish hands-free.") {
+                        toggle($stopPhrase)
+                    }
+                    row("Click anywhere to insert", detail: "Click into a field while dictating and the words go there.") {
+                        toggle($clickToInsert)
+                    }
+                    row("Insert at end of field", detail: "Add to what's already there instead of replacing the selection.") {
+                        toggle($insertAtEnd)
+                    }
+                    row("Show the idle pill", detail: "The small button at the edge of the screen.") {
+                        HStack(spacing: 10) {
+                            if cornerButton { Button("Reset position") { model.bridge.resetPanelPosition() }.buttonStyle(GhostButtonStyle()) }
+                            toggle($cornerButton)
+                        }
+                    }
+                    row("Double-tap to translate", detail: singleTap ? "Double-tap the trigger key anywhere to start or stop live translation."
+                        : "Needs Single tap. In double-tap mode a double tap is dictation.") {
+                        toggle($liveDoubleTap).disabled(!singleTap)
                     }
                 }
-                row("Double-tap to translate", detail: singleTap ? "Double-tap the trigger key anywhere to start or stop live translation."
-                    : "Needs Single tap. In double-tap mode a double tap is dictation.") {
-                    toggle($liveDoubleTap).disabled(!singleTap)
-                }
+                .padding(.horizontal, 16)
+            }
             }
         }
     }
 
     private var data: some View {
-        group("Your data") {
+        group("Your data", "lock.fill", .teal) {
             row("Everything stays on this Mac",
                 detail: "Only speech and text you choose to transcribe or summarise is sent to Grok.") {
                 Button("Show in Finder") { model.revealDataFolder() }.buttonStyle(SecondaryButtonStyle())

@@ -69,6 +69,12 @@ final class AppModel: ObservableObject {
     @Published var selectedMeetingID: UUID?
     /// The "new meeting" screen is showing, rather than a meeting.
     @Published var composingMeeting = false
+    /// The to-dos from every meeting are showing, rather than one meeting.
+    @Published var showingTasks = false
+    /// The search-everything palette is open.
+    @Published var showingSearch = false
+    /// What the search box starts with. Empty, except when drawing it off screen.
+    var searchSeed = ""
     @Published private(set) var session: MeetingSession?
     @Published private(set) var summarizing: Set<UUID> = []
     @Published var snippets: [Snippet] = Snippets.load()
@@ -215,6 +221,9 @@ final class AppModel: ObservableObject {
         return meetings.first { $0.id == id }
     }
 
+    var openTasks: [OpenTask] { Tasks.open(in: meetings) }
+    var doneTasks: [OpenTask] { Tasks.done(in: meetings) }
+
     var isRecordingMeeting: Bool { session?.isActive ?? false }
     /// A meeting that is recording, or still finishing after Stop.
     var hasMeetingSession: Bool { session != nil }
@@ -236,6 +245,7 @@ final class AppModel: ObservableObject {
         new.onFinished = { [weak self] meeting in self?.sessionFinished(meeting) }
         session = new
         composingMeeting = false
+        showingTasks = false
         selectedMeetingID = new.meeting.id
         section = .meetings
         startSecondTimer()
@@ -459,16 +469,36 @@ extension AppModel {
     func openMeeting(_ id: UUID) {
         selectedMeetingID = id
         composingMeeting = false
+        showingTasks = false
+        section = .meetings
+    }
+
+    func openTasksPage() {
+        showingTasks = true
+        composingMeeting = false
         section = .meetings
     }
 
     func newMeeting() {
+        showingTasks = false
         if let id = session?.meeting.id {
             openMeeting(id)
         } else {
             selectedMeetingID = nil
             composingMeeting = true
             section = .meetings
+        }
+    }
+
+    /// Jump to something a search found.
+    func open(_ hit: SearchHit) {
+        showingSearch = false
+        switch hit.kind {
+        case .meeting, .task:
+            if let id = hit.meetingID { openMeeting(id) }
+        case .dictation:
+            dictationTab = .history
+            section = .dictation
         }
     }
 }

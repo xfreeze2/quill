@@ -54,6 +54,7 @@ struct MeetingDetailView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(PageGround(tint: .indigo))
         .onAppear {
             title = meeting.title
             notes = meeting.userNotes
@@ -197,17 +198,11 @@ struct MeetingDetailView: View {
 
     @ViewBuilder private var summary: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
+            VStack(alignment: .leading, spacing: 16) {
                 if !meeting.suggestedNames.isEmpty { suggestions }
 
                 if let summary = meeting.summary, !summary.isEmpty {
-                    if !summary.overview.isEmpty {
-                        Text(summary.overview)
-                            .font(.system(size: 16))
-                            .lineSpacing(5)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                    }
+                    overviewPanel(summary)
                     if showsMap {
                         ConversationMap(timeline: timeline, player: player,
                                         onRename: { model.nameSpeaker(meeting.id, voice: $0, as: $1) },
@@ -254,7 +249,7 @@ struct MeetingDetailView: View {
     }
 
     private var liveNotes: some View {
-        section("Notes from the meeting") {
+        section("Notes from the meeting", "text.bubble.fill", .sky) {
             ForEach(meeting.liveNotes) { note in
                 Button { jump(to: note.time) } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -288,7 +283,7 @@ struct MeetingDetailView: View {
 
     @ViewBuilder private func summaryBody(_ summary: MeetingSummary) -> some View {
         if !summary.actionItems.isEmpty {
-            section("Action items") {
+            section("Action items", "checkmark.circle.fill", .green) {
                 ForEach(summary.actionItems) { item in
                     Button { model.toggleAction(meeting.id, item.id) } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -312,10 +307,10 @@ struct MeetingDetailView: View {
             }
         }
         if !summary.decisions.isEmpty {
-            section("Decisions") { bullets(summary.decisions) }
+            section("Decisions", "flag.fill", .amber) { bullets(summary.decisions) }
         }
         if !meeting.chapters.isEmpty {
-            section("Topics") {
+            section("Topics", "list.number", .indigo) {
                 ForEach(Array(meeting.chapters.enumerated()), id: \.element.id) { index, chapter in
                     Button { jump(to: chapter.start) } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -334,19 +329,73 @@ struct MeetingDetailView: View {
             }
         }
         if !summary.keyPoints.isEmpty {
-            section("Key points") { bullets(summary.keyPoints) }
+            section("Key points", "star.fill", .coral) { bullets(summary.keyPoints) }
         }
         if !summary.openQuestions.isEmpty {
-            section("Open questions") { bullets(summary.openQuestions) }
+            section("Open questions", "questionmark.circle.fill", .rose) { bullets(summary.openQuestions) }
         }
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            Text(title).font(.system(size: 15, weight: .semibold))
-            content()
+    private func section<Content: View>(_ title: String, _ symbol: String, _ tile: Tile,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        Panel(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 9) {
+                    IconTile(symbol: symbol, tile: tile, size: 22)
+                    Text(title).font(.system(size: 14, weight: .semibold))
+                }
+                VStack(alignment: .leading, spacing: 11) { content() }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// What it was about, and the numbers that go with it.
+    @ViewBuilder private func overviewPanel(_ summary: MeetingSummary) -> some View {
+        let facts = glance()
+        if !summary.overview.isEmpty || !facts.isEmpty {
+            Panel(padding: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if !summary.overview.isEmpty {
+                        Text(summary.overview)
+                            .font(.system(size: 16))
+                            .lineSpacing(5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .padding(18)
+                    }
+                    if !summary.overview.isEmpty && !facts.isEmpty { RowDivider() }
+                    if !facts.isEmpty {
+                        HStack(spacing: 0) {
+                            ForEach(Array(facts.enumerated()), id: \.offset) { index, fact in
+                                if index > 0 { Rectangle().fill(Palette.hairline).frame(width: 1, height: 30) }
+                                VStack(spacing: 1) {
+                                    Text(fact.value)
+                                        .font(.system(size: 17, weight: .semibold, design: .rounded).monospacedDigit())
+                                    Text(fact.label).font(.system(size: 11.5)).foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                    }
+                }
+            }
+        }
+    }
+
+    private func glance() -> [(value: String, label: String)] {
+        var out: [(String, String)] = []
+        if meeting.duration >= 1 { out.append((Meeting.describe(duration: meeting.duration), "Length")) }
+        if meeting.speakers.count > 0 { out.append(("\(meeting.speakers.count)", meeting.speakers.count == 1 ? "Person" : "People")) }
+        if meeting.wordCount > 0 { out.append((Formatting.count(meeting.wordCount), "Words")) }
+        let items = meeting.summary?.actionItems ?? []
+        if !items.isEmpty {
+            let open = items.filter { !$0.done }.count
+            out.append(("\(open)", open == 1 ? "To-do open" : "To-dos open"))
+        } else if !meeting.chapters.isEmpty {
+            out.append(("\(meeting.chapters.count)", meeting.chapters.count == 1 ? "Topic" : "Topics"))
+        }
+        return out
     }
 
     private func bullets(_ items: [String]) -> some View {
@@ -386,17 +435,19 @@ struct MeetingDetailView: View {
                     .padding(.top, 16)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(shown) { turn in
-                                TurnRow(meeting: meeting, turn: turn,
-                                        isPlaying: activeID == turn.id,
-                                        canSeek: player.isReady,
-                                        onSeek: { player.play(from: $0) },
-                                        onRename: { model.nameSpeaker(meeting.id, voice: turn.speaker, as: $0) })
-                                    .id(turn.id)
-                            }
-                            if shown.isEmpty {
-                                Text("Nothing matches “\(transcriptQuery)”.").font(.system(size: 13)).foregroundColor(.secondary)
+                        Panel(padding: 14) {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                ForEach(shown) { turn in
+                                    TurnRow(meeting: meeting, turn: turn,
+                                            isPlaying: activeID == turn.id,
+                                            canSeek: player.isReady,
+                                            onSeek: { player.play(from: $0) },
+                                            onRename: { model.nameSpeaker(meeting.id, voice: turn.speaker, as: $0) })
+                                        .id(turn.id)
+                                }
+                                if shown.isEmpty {
+                                    Text("Nothing matches “\(transcriptQuery)”.").font(.system(size: 13)).foregroundColor(.secondary)
+                                }
                             }
                         }
                         .modifier(Column())
@@ -422,6 +473,7 @@ struct MeetingDetailView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
+                    Panel(padding: 20) {
                     VStack(alignment: .leading, spacing: 22) {
                         if thread.exchanges.isEmpty {
                             VStack(alignment: .leading, spacing: 14) {
@@ -471,6 +523,7 @@ struct MeetingDetailView: View {
                             .id(exchange.id)
                         }
                     }
+                    }
                     .modifier(Column())
                 }
                 .onChange(of: thread.exchanges) { items in
@@ -493,7 +546,8 @@ struct MeetingDetailView: View {
             .padding(.leading, 14)
             .padding(.trailing, 8)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.sunken))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Palette.card))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
             .frame(maxWidth: Layout.reading)
             .padding(.horizontal, 40)
             .padding(.bottom, 20)
@@ -522,7 +576,8 @@ struct MeetingDetailView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.sunken))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
         .frame(maxWidth: Layout.reading)
         .padding(.horizontal, 40)
         .padding(.top, 20)

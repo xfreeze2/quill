@@ -89,16 +89,24 @@ in the menu-bar menu, or just launch it. It shows in the Dock while the window i
 back to being quiet when you close it. A meeting you're recording carries on in the menu bar (the
 icon turns red).
 
-Three things to do, and settings:
+Three things to do, and settings. Each page opens with what it does, so a fresh install is never a
+blank window:
 
 | | |
 |---|---|
-| **Meetings** | A list of your meetings beside the one you're reading. Start a new one, watch it live, then read the summary, the transcript, ask it questions, and keep your own notes. |
-| **Dictation** | **History** — everything you've dictated, by day, searchable. **Vocabulary** — names and terms to spell your way, and **shortcuts**: say "my email", get the whole address. |
-| **Translation** | Start live translation and choose the language, what to listen to, and whether it hides from screen sharing. |
+| **Meetings** | A list of your meetings beside the one you're reading, each with a line of what it was about and how many to-dos are still open. Before your first meeting the page is the new-meeting card: pick a call or a room, and see what you get. **To-dos** collects every action item from every meeting in one checkable list. |
+| **Dictation** | A strip of how you're doing (words today and this week, your streak, your pace, the last seven days as bars), then **History** by day with the icon of the app each dictation went into, and **Vocabulary**: names and terms to spell your way, and **shortcuts** — say "my email", get the whole address. Before your first dictation it shows how it works, and a box to try it in. |
+| **Translation** | Start live translation and choose the language, what to listen to, and whether it hides from screen sharing — with a picture of the window you'll see floating over what's playing. |
 | **Settings** | Your account, the permissions that are still missing, and short sections for dictation, meetings and general. The rarely-touched options are under **Advanced**. |
 
 ⌘1–⌘3 switch sections, ⌘, opens Settings, ⌘N opens a new meeting.
+
+**⌘K searches everything.** One box over the whole window: type a word and it looks through every
+meeting (title, topics, people, summary, notes and what was said), every to-do and every dictation,
+and shows the best matches first with the line where your words appear. Every word must be found,
+though not necessarily in the same place. With nothing typed it lists the things you can do — new
+meeting, to-dos, start live translation, go to a page — and your latest meetings. ↑↓ choose, ↩ open,
+esc close. The sidebar's search field opens it too.
 
 **Shortcuts (snippets).** Add a phrase and what it should become under **Dictation ▸ Vocabulary**.
 When a dictation is exactly that phrase — or contains it — Quill writes the expansion. Matching

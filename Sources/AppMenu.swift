@@ -36,6 +36,7 @@ final class AppMenu: NSObject {
         main.addItem(submenu(named: "File") { menu in
             menu.addItem(item("New Meeting Notes", #selector(newMeeting), key: "n"))
             menu.addItem(item("Start Dictation", #selector(dictate), key: "d", modifiers: [.command, .shift]))
+            menu.addItem(item("Search Everything…", #selector(searchAll), key: "k"))
             menu.addItem(.separator())
             menu.addItem(system("Close Window", #selector(NSWindow.performClose(_:)), key: "w"))
         })
@@ -131,6 +132,7 @@ final class AppMenu: NSObject {
     @objc private func openSettings() { MainWindow.shared.show(.settings) }
     @objc private func newMeeting() { MainWindow.shared.show(); model.newMeeting() }
     @objc private func dictate() { model.bridge.toggleDictation() }
+    @objc private func searchAll() { MainWindow.shared.show(); model.showingSearch = true }
     @objc private func showWindow() { MainWindow.shared.show() }
     @objc private func openSetup() { model.bridge.openSetup() }
     @objc private func revealData() { model.revealDataFolder() }

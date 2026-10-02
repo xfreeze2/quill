@@ -15,13 +15,13 @@ import AppKit
 
 enum Palette {
 
-    private static func dynamic(light: NSColor, dark: NSColor) -> Color {
+    static func dynamic(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
         })
     }
 
-    private static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {
+    static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {
         NSColor(srgbRed: r, green: g, blue: b, alpha: a)
     }
 

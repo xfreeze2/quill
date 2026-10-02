@@ -429,6 +429,48 @@ enum MeetingTest {
         check.isTrue("and the end", trimmedAsk.contains("line number 399 "))
         check.isTrue("and it fits", trimmedAsk.count < 4_000)
 
+        // ── Tasks across meetings ────────────────────────────────────────────────
+        let now = Date()
+        var older = Meeting(title: "Design sync", createdAt: now.addingTimeInterval(-86_400))
+        older.summary = MeetingSummary(overview: "Icons are due.", keyPoints: [], decisions: [],
+                                       actionItems: [ActionItem(owner: "Priya", task: "Export the icons", done: true),
+                                                     ActionItem(owner: nil, task: "Book the review")],
+                                       openQuestions: [])
+        var newer = Meeting(title: "Roadmap review", createdAt: now)
+        newer.summary = MeetingSummary(overview: "Mobile slips to January. Launch checklist owner agreed.", keyPoints: [], decisions: [],
+                                       actionItems: [ActionItem(owner: "Karen", task: "Send the beta invite list")],
+                                       openQuestions: [])
+        newer.utterances = [Utterance(id: 0, speaker: "you", start: 0, end: 5,
+                                      text: "We will push the mobile launch to the first sprint of January and keep search on track.")]
+        let quiet = Meeting(title: "Coffee with Sam", createdAt: now.addingTimeInterval(-9_000))
+        let library = [older, quiet, newer]
+        check.equal("every action item is found", Tasks.all(in: library).count, 3)
+        check.equal("newest meeting first", Tasks.all(in: library).first?.meetingTitle, "Roadmap review")
+        check.equal("two are still open", Tasks.open(in: library).map(\.item.task), ["Send the beta invite list", "Book the review"])
+        check.equal("one is done", Tasks.done(in: library).map(\.item.task), ["Export the icons"])
+
+        // ── Searching everything ─────────────────────────────────────────────────
+        let notes = [DictationEntry(text: "Remember to book the venue for the January offsite.", date: now.addingTimeInterval(-300), app: "Notes", seconds: 4),
+                     DictationEntry(text: "Thanks, see you tomorrow.", date: now.addingTimeInterval(-100), app: "Mail", seconds: 2)]
+        check.isTrue("nothing typed, nothing found", AppSearch.hits(for: "  ", meetings: library, entries: notes).isEmpty)
+        let january = AppSearch.hits(for: "january", meetings: library, entries: notes)
+        check.isTrue("a meeting and a dictation mention January", january.map(\.kind) == [SearchHit.Kind.meeting, SearchHit.Kind.dictation])
+        check.equal("the meeting is found by what was said", january.first?.title, "Roadmap review")
+        check.isTrue("with the words around the match", january.first?.detail.lowercased().contains("january") == true)
+        check.equal("a title beats the transcript", AppSearch.hits(for: "design", meetings: library, entries: notes).first?.title, "Design sync")
+        check.equal("every word must be found", AppSearch.hits(for: "january zebra", meetings: library, entries: notes).count, 0)
+        check.equal("words can be in different places", AppSearch.hits(for: "roadmap january", meetings: library, entries: notes).first?.title, "Roadmap review")
+        let tasky = AppSearch.hits(for: "invite", meetings: library, entries: notes)
+        check.isTrue("a task is found", tasky.contains { $0.kind == .task && $0.title == "Send the beta invite list" })
+        check.isTrue("and knows its meeting", tasky.first { $0.kind == .task }?.meetingID == newer.id)
+        check.isTrue("a dictation is found by its app", !AppSearch.hits(for: "mail", meetings: library, entries: notes).isEmpty)
+        let haystack = String(repeating: "alpha beta gamma delta ", count: 30) + "needle " + String(repeating: "omega psi chi ", count: 30)
+        let cut = AppSearch.snippet(in: haystack, terms: ["needle"], width: 80)
+        check.isTrue("a snippet keeps the match", cut.contains("needle"))
+        check.isTrue("is short", cut.count <= 90)
+        check.isTrue("and shows it was cut", cut.hasPrefix("…") && cut.hasSuffix("…"))
+        check.equal("a short text is left alone", AppSearch.snippet(in: "just this", terms: ["this"]), "just this")
+
         check.finish()
     }
 }

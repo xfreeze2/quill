@@ -21,8 +21,9 @@ struct ConversationMap: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                SectionLabel(text: "Conversation")
+            HStack(spacing: 9) {
+                IconTile(symbol: "waveform", tile: .indigo, size: 22)
+                Text("Conversation").font(.system(size: 14, weight: .semibold))
                 Spacer()
                 if player.isReady { playback }
             }
@@ -49,7 +50,9 @@ struct ConversationMap: View {
             }
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.sunken))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
     }
 
     // MARK: Pieces
@@ -250,5 +253,10 @@ struct LiveSpeakers: View {
                 .frame(height: 5)
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
     }
 }

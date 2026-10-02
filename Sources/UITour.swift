@@ -39,29 +39,45 @@ enum UITour {
         let model = AppModel(historyURL: scratch.appendingPathComponent("history.json"),
                              meetingsDirectory: scratch.appendingPathComponent("Meetings"))
         let ids = seed(model)
+        let blank = AppModel(historyURL: scratch.appendingPathComponent("blank-history.json"),
+                             meetingsDirectory: scratch.appendingPathComponent("BlankMeetings"))
+        blank.snippets = []
 
         let steps = Steps()
-        let size = CGSize(width: 1060, height: 720)
+        let size = CGSize(width: 1180, height: 780)
         for dark in [false, true] {
             let tag = dark ? "dark" : "light"
-            func page(_ name: String, _ section: AppModel.Section, height: CGFloat = 720, prepare: @escaping () -> Void = {}) {
-                shoot("\(name)-\(tag)", size: CGSize(width: size.width, height: height), dark: dark, folder: folder, steps: steps) {
-                    model.section = section
-                    prepare()
-                    return AnyView(RootView(model: model))
+            func page(_ name: String, _ section: AppModel.Section, width: CGFloat? = nil, height: CGFloat = 780, using chosen: AppModel? = nil,
+                      prepare: @escaping (AppModel) -> Void = { _ in }) {
+                let shown = chosen ?? model
+                shoot("\(name)-\(tag)", size: CGSize(width: width ?? size.width, height: height), dark: dark, folder: folder, steps: steps) {
+                    shown.section = section
+                    prepare(shown)
+                    return AnyView(RootView(model: shown))
                 }
             }
-            page("meetings-summary", .meetings, height: 1280) { model.composingMeeting = false; model.selectedMeetingID = ids.roadmap }
-            page("meetings-people", .meetings) { model.composingMeeting = false; model.selectedMeetingID = ids.design }
-            page("meetings-failed", .meetings) { model.selectedMeetingID = ids.coffee }
-            page("meetings-new", .meetings) { model.composingMeeting = true }
-            page("dictation-history", .dictation) { model.dictationTab = .history }
-            page("dictation-vocabulary", .dictation) { model.dictationTab = .vocabulary }
+            page("first-meetings", .meetings, using: blank) { $0.composingMeeting = true; $0.selectedMeetingID = nil }
+            page("first-dictation", .dictation, using: blank) { $0.dictationTab = .history }
+            page("first-vocabulary", .dictation, using: blank) { $0.dictationTab = .vocabulary }
+            page("first-translation", .translate, using: blank)
+            page("tasks", .meetings) { $0.composingMeeting = false; $0.showingTasks = true }
+            page("meetings-summary", .meetings, height: 1280) { $0.showingTasks = false; $0.composingMeeting = false; $0.selectedMeetingID = ids.roadmap }
+            page("meetings-people", .meetings) { $0.showingTasks = false; $0.composingMeeting = false; $0.selectedMeetingID = ids.design }
+            page("meetings-failed", .meetings) { $0.showingTasks = false; $0.selectedMeetingID = ids.coffee }
+            page("meetings-new", .meetings) { $0.showingTasks = false; $0.composingMeeting = true }
+            page("dictation-history", .dictation) { $0.dictationTab = .history }
+            page("dictation-vocabulary", .dictation) { $0.dictationTab = .vocabulary }
             page("translation", .translate)
             page("settings", .settings, height: 1500)
+            page("min-meetings", .meetings, width: 980, height: 640) { $0.showingTasks = false; $0.composingMeeting = true }
+            page("min-dictation", .dictation, width: 980, height: 640) { $0.dictationTab = .history }
+            page("min-translation", .translate, width: 980, height: 640)
+            page("palette", .meetings) { $0.showingSearch = true; $0.searchSeed = "" }
+            page("palette-search", .meetings) { $0.showingSearch = true; $0.searchSeed = "beta" }
+            page("palette-reset", .meetings) { $0.showingSearch = false; $0.searchSeed = "" }
 
             for (name, tab) in [("transcript", MeetingDetailView.Tab.transcript), ("ask", .ask), ("notes", .notes)] {
-                shoot("meeting-\(name)-\(tag)", size: CGSize(width: 768, height: 720), dark: dark, folder: folder, steps: steps) {
+                shoot("meeting-\(name)-\(tag)", size: CGSize(width: 768, height: 780), dark: dark, folder: folder, steps: steps) {
                     model.composingMeeting = false
                     guard let meeting = model.meeting(ids.roadmap) else { return AnyView(EmptyView()) }
                     return AnyView(ZStack { Palette.canvas; MeetingDetailView(model: model, meeting: meeting, tab: tab) })
@@ -288,7 +304,7 @@ enum UITour {
             model.composingMeeting = false
             let steps = Steps()
             for dark in [false, true] {
-                shoot("finished-\(dark ? "dark" : "light")", size: CGSize(width: 1060, height: 720), dark: dark, folder: folder, steps: steps) {
+                shoot("finished-\(dark ? "dark" : "light")", size: CGSize(width: 1180, height: 780), dark: dark, folder: folder, steps: steps) {
                     AnyView(RootView(model: model))
                 }
             }
@@ -305,7 +321,7 @@ enum UITour {
                 out("UI TOUR: drawing the live meeting with \(count) remarks")
                 let steps = Steps()
                 for dark in [false, true] {
-                    shoot("live-\(dark ? "dark" : "light")", size: CGSize(width: 1060, height: 720), dark: dark, folder: folder, steps: steps) {
+                    shoot("live-\(dark ? "dark" : "light")", size: CGSize(width: 1180, height: 780), dark: dark, folder: folder, steps: steps) {
                         AnyView(RootView(model: model))
                     }
                 }

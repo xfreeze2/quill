@@ -72,6 +72,7 @@ enum DictationHistoryTest {
         check.equal("total words", s.words, 210)
         check.equal("words today", s.wordsToday, 120)
         check.equal("words this week", s.wordsThisWeek, 210 - 0)
+        check.equal("each of the last seven days", s.lastSevenDays, [0, 50, 0, 0, 10, 30, 120])
         check.equal("a streak stops at the gap", s.streakDays, 3)
         check.equal("speed from timed dictations only", s.wordsPerMinute, 100)
 

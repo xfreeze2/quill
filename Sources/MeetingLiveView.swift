@@ -49,6 +49,7 @@ struct LiveMeetingView: View {
         .padding(.horizontal, 40)
         .padding(.top, Layout.titlebar - 4)
         .padding(.bottom, 26)
+        .background(PageGround(tint: .rose))
     }
 
     private func commitTitle() {
@@ -136,7 +137,11 @@ struct LiveMeetingView: View {
                     .help("Scroll along as people speak")
                 }
             }
-            if showTranscript { transcript } else { liveNotes }
+            Panel(padding: 0) {
+                if showTranscript { transcript } else { liveNotes }
+            }
+            .frame(maxHeight: .infinity)
+            .padding(.top, 10)
             nowSaying
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -156,7 +161,7 @@ struct LiveMeetingView: View {
                             .font(.system(size: 13)).foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.top, 70)
+                    .padding(.top, 60)
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         ForEach(items) { note in
@@ -173,6 +178,7 @@ struct LiveMeetingView: View {
                         Color.clear.frame(height: 1).id("end")
                     }
                     .padding(.vertical, 16)
+                    .padding(.horizontal, 16)
                     .animation(.easeOut(duration: 0.3), value: items.count)
                 }
             }
@@ -198,7 +204,7 @@ struct LiveMeetingView: View {
                     Color.clear.frame(height: 1).id("end")
                 }
                 .padding(.vertical, 16)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 16)
             }
             .onChange(of: signature) { _ in
                 guard follow else { return }
@@ -219,7 +225,9 @@ struct LiveMeetingView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.sunken))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Palette.card))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
+            .padding(.top, 10)
         }
     }
 
@@ -232,7 +240,8 @@ struct LiveMeetingView: View {
             NotesEditor(text: $notes, placeholder: "Jot anything down. It's kept with the meeting.",
                         onChange: { model.setNotes(meeting.id, $0) })
                 .padding(14)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.sunken))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Palette.card))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.hairline, lineWidth: 1))
         }
         .frame(maxHeight: .infinity)
     }
