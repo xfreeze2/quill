@@ -109,8 +109,10 @@ struct VocabularyView: View {
                         .padding(22)
                         RowDivider()
                     } else {
-                        ForEach($model.snippets) { $snippet in
-                            SnippetRow(snippet: $snippet) {
+                        ForEach(model.snippets) { snippet in
+                            SnippetRow(snippet: binding(for: snippet)) {
+                                // Let a field being edited commit before its row goes.
+                                NSApp.keyWindow?.makeFirstResponder(nil)
                                 model.setSnippets(model.snippets.filter { $0.id != snippet.id })
                             }
                             RowDivider()
@@ -131,6 +133,15 @@ struct VocabularyView: View {
 
             if !model.snippets.isEmpty { tryIt }
         }
+    }
+
+    private func binding(for snippet: Snippet) -> Binding<Snippet> {
+        Binding(
+            get: { model.snippets.first { $0.id == snippet.id } ?? snippet },
+            set: { updated in
+                guard let index = model.snippets.firstIndex(where: { $0.id == snippet.id }) else { return }
+                model.snippets[index] = updated
+            })
     }
 
     private var tryIt: some View {

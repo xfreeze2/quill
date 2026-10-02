@@ -85,6 +85,24 @@ enum AudioArchiveTest {
         check.isTrue("and the recording exists", FileManager.default.fileExists(atPath: AudioArchive.finalURL(in: crashed).path))
         check.isTrue("nothing to recover in an empty folder", !AudioArchive.recover(folder: dir.appendingPathComponent("empty")))
 
+        // An encode that fails must not throw the recording away: the plain files stay for another try.
+        let stuck = dir.appendingPathComponent("stuck")
+        AppSupport.ensure(stuck)
+        try? tone(400, seconds: 1).write(to: stuck.appendingPathComponent("lane-0.raw"))
+        let blocker = AudioArchive.finalURL(in: stuck)
+        let anchor = blocker.appendingPathComponent("anchor")
+        try? FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: anchor.path, contents: Data([1]))
+        try? FileManager.default.setAttributes([.immutable: true], ofItemAtPath: anchor.path)
+        check.isTrue("leftovers are noticed", AudioArchive.hasLeftovers(folder: stuck))
+        check.isTrue("a failed encode reports it", !AudioArchive.recover(folder: stuck))
+        check.isTrue("and keeps the plain files", AudioArchive.hasLeftovers(folder: stuck))
+        try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: anchor.path)
+        try? FileManager.default.removeItem(at: blocker)
+        check.isTrue("once the way is clear the retry works", AudioArchive.recover(folder: stuck))
+        check.isTrue("and clears the plain files", !AudioArchive.hasLeftovers(folder: stuck))
+        check.isTrue("nothing is left over in a finished folder", !AudioArchive.hasLeftovers(folder: folder))
+
         check.finish()
     }
 }

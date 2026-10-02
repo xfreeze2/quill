@@ -126,7 +126,8 @@ final class LaneTranscriber {
             // The connection's clock starts at the first byte it is sent.
             let base = (self.origin ?? self.clock()) + Double(self.fedBytes - self.pendingBytes) / Double(AudioArchive.bytesPerSecond)
             let assembler = LaneAssembler(voices: self.voices, base: base, epoch: link.epoch)
-            assembler.voiceName = { [weak self] index in self?.voiceID(epoch: link.epoch, index: index) ?? "s\(index)" }
+            let epoch = link.epoch
+            assembler.voiceName = { [weak self] index in self?.voiceID(epoch: epoch, index: index) ?? "s\(index)" }
             link.assembler = assembler
             for chunk in self.pending { link.client.send(pcm: chunk) }
             if self.pendingBytes > 0 {
@@ -180,6 +181,7 @@ final class LaneTranscriber {
                 publishLive()
                 if failure == .unauthorized {
                     onProblem(STTClient.Failure.unauthorized.message)
+                    reconnect(atLeast: 15)
                 } else {
                     reconnect()
                 }
@@ -188,12 +190,12 @@ final class LaneTranscriber {
         finishStoppingIfDone()
     }
 
-    private func reconnect() {
+    private func reconnect(atLeast minimum: TimeInterval = 0) {
         let now = Date()
         recentFailures = recentFailures.filter { now.timeIntervalSince($0) < 60 } + [now]
         let attempt = recentFailures.count
-        let delay: TimeInterval = attempt <= 1 ? 0 : min(10, pow(2, Double(attempt - 1)))
-        if attempt >= 3 { onProblem("Reconnecting…") }
+        let delay: TimeInterval = max(minimum, attempt <= 1 ? 0 : min(10, pow(2, Double(attempt - 1))))
+        if attempt >= 3, minimum == 0 { onProblem("Reconnecting…") }
         let work = DispatchWorkItem { [weak self] in self?.openSocket() }
         retryWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -492,8 +494,7 @@ final class MeetingSession {
             return
         }
         phase = .stopping
-        timer?.invalidate()
-        timer = nil
+        store.save(meeting)
         audios.forEach { $0.stop() }
         audios.removeAll()
         micLevel = 0
@@ -509,6 +510,7 @@ final class MeetingSession {
             guard let self else { return }
             self.meeting.endedAt = Date()
             self.meeting.utterances = self.transcript.utterances
+            self.store.save(self.meeting)
             if let archive = self.archive {
                 archive.finish { [weak self] kept in
                     guard let self else { return }
@@ -522,6 +524,8 @@ final class MeetingSession {
     }
 
     private func conclude() {
+        timer?.invalidate()
+        timer = nil
         store.save(meeting)
         phase = .finished
         Log.write("meeting finished — \(Int(meeting.duration))s, \(meeting.utterances.count) remarks, "

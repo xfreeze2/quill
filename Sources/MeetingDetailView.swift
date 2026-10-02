@@ -17,6 +17,7 @@ struct MeetingDetailView: View {
     @State private var notes = ""
     @State private var confirmDelete = false
     @State private var notesSave: DispatchWorkItem?
+    @FocusState private var titleFocused: Bool
     @StateObject private var player: MeetingPlayer
 
     init(model: AppModel, meeting: Meeting, tab: Tab = .summary) {
@@ -74,14 +75,21 @@ struct MeetingDetailView: View {
         }
     }
 
+    private func commitTitle() {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { title = meeting.title } else if trimmed != meeting.title { model.rename(meeting.id, to: trimmed) }
+    }
+
     // MARK: Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
-                TextField("Meeting title", text: $title, onCommit: { model.rename(meeting.id, to: title) })
+                TextField("Meeting title", text: $title, onCommit: commitTitle)
                     .textFieldStyle(.plain)
                     .font(.display(28))
+                    .focused($titleFocused)
+                    .onChange(of: titleFocused) { if !$0 { commitTitle() } }
                 Spacer(minLength: 10)
                 copyMenu
                 Button { export() } label: {

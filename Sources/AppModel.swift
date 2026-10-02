@@ -118,6 +118,22 @@ final class AppModel: ObservableObject {
             }
             Log.write("meeting \(meeting.id) was cut short — kept \(meeting.utterances.count) remarks")
         }
+        for var meeting in store.all() {
+            var changed = false
+            // A summary that was being written when Quill quit is not still being written.
+            if meeting.summaryState == .working {
+                meeting.summaryState = .failed
+                meeting.summaryError = "The summary was interrupted. Try again."
+                changed = true
+            }
+            // A recording that couldn't be finished last time gets another go.
+            let folder = store.folder(for: meeting.id)
+            if AudioArchive.hasLeftovers(folder: folder), AudioArchive.recover(folder: folder), !meeting.hasAudio {
+                meeting.hasAudio = true
+                changed = true
+            }
+            if changed { store.save(meeting) }
+        }
         reloadHistory()
         reloadMeetings()
         refreshAccess()
@@ -197,10 +213,16 @@ final class AppModel: ObservableObject {
     }
 
     var isRecordingMeeting: Bool { session?.isActive ?? false }
+    /// A meeting that is recording, or still finishing after Stop.
+    var hasMeetingSession: Bool { session != nil }
 
     func startMeeting(capture: MeetingCapture, keepAudio: Bool, language: String,
                       testSources: MeetingSession.Sources? = nil) {
-        guard !isRecordingMeeting else { return }
+        guard session == nil else {
+            if let id = session?.meeting.id { openMeeting(id) }
+            show(toast: isRecordingMeeting ? "A meeting is already being recorded." : "Finishing the last meeting — one moment.")
+            return
+        }
         if testSources == nil, Auth.current() == nil {
             show(toast: "Sign in to Grok, or add an xAI API key in Settings, before taking notes.", seconds: 6)
             return
@@ -225,14 +247,19 @@ final class AppModel: ObservableObject {
     /// Quitting mid-meeting: close the recording properly and keep what was said,
     /// but leave the summary for next time, when there's no rush.
     func finishBeforeQuit(_ done: @escaping () -> Void) {
-        guard let session, session.isActive else { done(); return }
+        guard let session else { done(); return }
         isQuitting = true
+        if session.phase == .starting {
+            session.stop()
+            done()
+            return
+        }
         let previous = session.onFinished
         session.onFinished = { meeting in
             previous(meeting)
             done()
         }
-        session.stop()
+        if session.isActive { session.stop() }
     }
 
     private func sessionChanged() {
@@ -432,7 +459,7 @@ extension AppModel {
     }
 
     func newMeeting() {
-        if isRecordingMeeting, let id = session?.meeting.id {
+        if let id = session?.meeting.id {
             openMeeting(id)
         } else {
             selectedMeetingID = nil

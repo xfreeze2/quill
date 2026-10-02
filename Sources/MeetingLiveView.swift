@@ -8,6 +8,7 @@ struct LiveMeetingView: View {
     @State private var title: String
     @State private var notes: String
     @State private var follow = true
+    @FocusState private var titleFocused: Bool
 
     init(model: AppModel, session: MeetingSession) {
         self.model = model
@@ -36,15 +37,22 @@ struct LiveMeetingView: View {
         .padding(.bottom, 26)
     }
 
+    private func commitTitle() {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { title = meeting.title } else if trimmed != meeting.title { model.rename(meeting.id, to: trimmed) }
+    }
+
     // MARK: Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 if stopping { ProgressView().controlSize(.small) } else { PulsingDot() }
-                TextField("Meeting title", text: $title, onCommit: { model.rename(meeting.id, to: title) })
+                TextField("Meeting title", text: $title, onCommit: commitTitle)
                     .textFieldStyle(.plain)
                     .font(.display(27))
+                    .focused($titleFocused)
+                    .onChange(of: titleFocused) { if !$0 { commitTitle() } }
                 Spacer(minLength: 12)
                 stopButton
             }

@@ -59,6 +59,12 @@ final class AudioArchive {
         }
     }
 
+    /// Whether `folder` still holds plain files waiting to become a recording.
+    static func hasLeftovers(folder: URL) -> Bool {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return names.contains { $0.hasPrefix("lane-") && $0.hasSuffix(".raw") }
+    }
+
     /// A recording that was cut short leaves the plain files behind. Turns them
     /// into the audio file, so a crash costs nothing.
     @discardableResult
@@ -72,15 +78,16 @@ final class AudioArchive {
             .filter { $0.lastPathComponent.hasPrefix("lane-") && $0.pathExtension == "raw" }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
         guard !lanes.isEmpty else { return false }
-        defer { lanes.forEach { try? FileManager.default.removeItem(at: $0) } }
 
         let target = finalURL(in: folder)
         try? FileManager.default.removeItem(at: target)
         do {
             try encode(lanes: lanes, to: target)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
+            lanes.forEach { try? FileManager.default.removeItem(at: $0) }
             return true
         } catch {
+            // The plain files stay, so the next launch can try again.
             try? FileManager.default.removeItem(at: target)
             Log.write("meeting audio: couldn't write the recording — \(error.localizedDescription)")
             return false

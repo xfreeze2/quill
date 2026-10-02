@@ -28,7 +28,8 @@ enum MeetingSummarizer {
         }
     }
 
-    private static func complete(token: String, system: String, user: String,
+    /// A busy service (429, 502, 503) is asked again, twice, after the wait it names or a few seconds.
+    private static func complete(token: String, system: String, user: String, attempt: Int = 1,
                                  done: @escaping (Result<String, SummaryFailure>) -> Void) {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
@@ -53,8 +54,18 @@ enum MeetingSummarizer {
             }
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                 Log.write("meeting summary: HTTP \(http.statusCode)")
-                return done(.failure(http.statusCode == 401 || http.statusCode == 403
-                                     ? .unauthorized : .network("The summary service answered with an error (\(http.statusCode))")))
+                if [429, 502, 503].contains(http.statusCode), attempt < 3 {
+                    let named = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "") ?? 0
+                    let wait = min(20, max(named, Double(attempt) * 4))
+                    return DispatchQueue.global().asyncAfter(deadline: .now() + wait) {
+                        complete(token: token, system: system, user: user, attempt: attempt + 1, done: done)
+                    }
+                }
+                if http.statusCode == 401 || http.statusCode == 403 { return done(.failure(.unauthorized)) }
+                let busy = http.statusCode == 429
+                return done(.failure(.network(busy
+                    ? "The summary service is busy right now — try again in a minute"
+                    : "The summary service answered with an error (\(http.statusCode))")))
             }
             guard let data,
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

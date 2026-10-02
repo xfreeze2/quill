@@ -179,7 +179,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     private var selfTestTimer: Timer?
     private var selfTestOverlapPending = ProcessInfo.processInfo.environment["QUILL_SELFTEST_OVERLAP"] != nil
     private let setup = SetupWindow()
-    private var lastCapturePrivacy = Defaults.bool(Defaults.liveHideFromCapture)
+    private var lastCapturePrivacy = true
 
     /// Any self-test drives the app headlessly; none of them should open the
     /// window or touch the user's saved dictations and meetings.
@@ -192,6 +192,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Defaults.register()
+        lastCapturePrivacy = Defaults.bool(Defaults.liveHideFromCapture)
         NSApp.setActivationPolicy(.accessory)
         if !isSelfTest { AppModel.shared.prepare() }
         LoginItem.migrate()
@@ -475,9 +476,12 @@ final class QuillApp: NSObject, NSApplicationDelegate {
 
         addLiveTranslationItems(to: menu)
 
-        let meetingItem = NSMenuItem(title: AppModel.shared.isRecordingMeeting ? "Stop meeting notes" : "Start meeting notes",
+        let meetingModel = AppModel.shared
+        let meetingItem = NSMenuItem(title: meetingModel.isRecordingMeeting ? "Stop meeting notes"
+                                        : (meetingModel.hasMeetingSession ? "Finishing meeting notes…" : "Start meeting notes"),
                                      action: #selector(toggleMeeting), keyEquivalent: "")
         meetingItem.target = self
+        meetingItem.isEnabled = !(meetingModel.hasMeetingSession && !meetingModel.isRecordingMeeting)
         menu.addItem(meetingItem)
         menu.addItem(.separator())
 
@@ -723,7 +727,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
     /// and the recording are whole on the next launch.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let model = AppModel.shared
-        guard model.isRecordingMeeting else { return .terminateNow }
+        guard model.hasMeetingSession else { return .terminateNow }
         var answered = false
         let finish = {
             guard !answered else { return }
@@ -731,7 +735,7 @@ final class QuillApp: NSObject, NSApplicationDelegate {
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         model.finishBeforeQuit(finish)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: finish)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: finish)
         return .terminateLater
     }
 
